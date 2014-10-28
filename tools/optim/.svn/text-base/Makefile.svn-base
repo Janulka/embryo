@@ -1,0 +1,56 @@
+LOCAL_DIRECTORY = $(TOP_DIRECTORY)/tools/optim
+
+INCLUDES = \
+-I./include \
+-I$(LIB_EMBRYO_PATH)/include \
+$(shell pkg-config --cflags gsl)
+
+LDFLAGS = \
+-ldl \
+-L$(LIB_EMBRYO_PATH) -lembryo \
+$(shell pkg-config --libs gsl)
+
+
+
+TARGET = embryo-optim
+
+
+
+SRC_FILES = \
+./src/cmaes.cpp \
+./src/exception.cpp \
+./src/Main.cpp \
+./src/random.cpp \
+./src/readpara.cpp \
+./src/timings.cpp
+
+OBJECTS = $(patsubst %.cpp,%.o,$(SRC_FILES))
+
+
+
+.PHONY: all clean cleaner install
+
+all: $(TARGET)
+
+
+
+$(TARGET): $(OBJECTS)
+	$(CXX) -o $@  $(OBJECTS) $(LDFLAGS)
+
+%.o:%.cpp
+	$(CXX) -c -fPIC $(INCLUDES) $(CXXFLAGS) $(OPTIM_FLAGS) -o $@ $<
+
+clean:
+	rm -f ./src/*.o
+
+cleaner:
+	rm -f $(TARGET)
+
+dist_files:
+	ls -1 $(LOCAL_DIRECTORY)/include/*.hpp $(LOCAL_DIRECTORY)/src/*.cpp $(LOCAL_DIRECTORY)/Makefile >> $(DIST_FILES_LIST)
+
+install:
+	cp $(TARGET) $(INSTALL_DIRECTORY)/bin
+
+uninstall:
+	rm -f $(INSTALL_DIRECTORY)/bin/$(TARGET) 

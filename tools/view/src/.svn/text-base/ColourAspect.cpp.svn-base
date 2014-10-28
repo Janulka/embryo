@@ -1,0 +1,14 @@
+#include "ColourAspect.hpp"
+
+using namespace embryo;
+
+
+ColourAspect::~ColourAspect() { }
+
+
+
+
+void
+ColourAspect::set(const Embryo& inEmbryo, Picture& outPicture) {
+  inEmbryo.getColours(outPicture);
+}

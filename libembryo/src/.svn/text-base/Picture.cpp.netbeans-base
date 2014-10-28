@@ -1,0 +1,150 @@
+/*
+ *  libembryo
+ *  Copyright (C) 2008 by Alexandre Devert
+ *
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *                  Version 2, December 2004
+ *
+ *  Copyright (C) 2004 Sam Hocevar
+ *  14 rue de Plaisance, 75014 Paris, France
+ *  Everyone is permitted to copy and distribute verbatim or modified
+ *  copies of this license document, and changing it is allowed as long
+ *  as the name is changed.
+ *
+ *            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ *
+ *  0. You just DO WHAT THE FUCK YOU WANT TO.
+ */
+
+#include <algorithm>
+#include "embryo/Picture.hpp"
+#include "embryo/ArrayOps.hpp"
+#include "embryo/Exception.hpp"
+
+using namespace std;
+using namespace embryo;
+
+
+
+Picture::Picture() : mWidth(0), mHeight(0), mArray(0) { }
+
+
+
+Picture::Picture(size_t inWidth, size_t inHeight) : mWidth(inWidth), mHeight(inHeight) {
+  mArray = new double[mWidth * mHeight];
+}
+
+
+
+Picture::Picture(const Picture& inPic) : mWidth(inPic.mWidth), mHeight(inPic.mHeight) {
+  size_t lNbPixels = mWidth * mHeight;
+  mArray = new double[lNbPixels];
+  arrayd::copy(mArray, inPic.mArray, lNbPixels);
+}
+
+
+
+Picture::~Picture() {
+  if (mArray != 0)
+    delete[] mArray;
+}
+
+
+
+Picture&
+Picture::operator = (const Picture& inPic) {
+  size_t lNbPixels = mWidth * mHeight;
+  size_t lInNbPixels = inPic.mWidth * inPic.mHeight;
+
+  if (lNbPixels != lInNbPixels) {
+    if (mArray != 0)
+      delete[] mArray;
+    mArray = new double[lInNbPixels];
+  }
+
+  arrayd::copy(mArray, inPic.mArray, lInNbPixels);
+  mWidth = inPic.mWidth;
+  mHeight = inPic.mHeight;
+
+  return *this;
+}
+
+
+
+void
+Picture::affineTransform(double inScale, double inBias) {
+  size_t lNbPixels = mWidth * mHeight;
+
+  double* lOffset = mArray;
+  for(size_t i = lNbPixels; i != 0; ++lOffset, --i)
+    (*lOffset) = inScale * (*lOffset) + inBias;
+}
+
+
+
+void
+Picture::copy(const Picture& inPic, size_t inX, size_t inY) {
+  // Compute the nb of rows to copy
+  size_t lNbRowsToCopy;
+  if (inY > mHeight)
+    return;
+
+  if (inY + inPic.mHeight > mHeight)
+    lNbRowsToCopy = mHeight - inY;
+  else
+    lNbRowsToCopy = inPic.mHeight;
+
+  // Copy the size of a row to copy
+  size_t lRowSize;
+  if (inX > mWidth)
+    return;
+
+  if (inX + inPic.mWidth > mWidth)
+    lRowSize = mWidth - inX;
+  else
+    lRowSize = inPic.mWidth;
+
+  // Copy row by row
+  const double* lSrc = inPic.mArray;
+  double* lDst = mArray + mWidth * inY + inX;
+
+  for(size_t i = lNbRowsToCopy; i != 0; --i, lSrc += inPic.mWidth, lDst += mWidth)
+    arrayd::copy(lDst, lSrc, lRowSize);
+}
+
+
+
+double
+embryo::distance(const Picture& inA, const Picture& inB) {
+  size_t lNbPixels = inA.width() *  inA.height();
+
+  const double* lA = inA.pixels();
+  const double* lB = inB.pixels();
+
+  double lSum = 0.0;
+  for(size_t i = lNbPixels; i != 0; lA++, lB++, --i) {
+    double lDiff = (*lA) - (*lB);
+    lSum += lDiff * lDiff;
+  }
+
+  return lSum / lNbPixels;
+}
+
+
+
+double
+embryo::maxDistance(const Picture& inPic) {
+  size_t lNbPixels = inPic.width() * inPic.height();
+
+  const double* lOffset = inPic.pixels();
+
+  double lSum = 0.0;
+  for(size_t i = lNbPixels; i != 0; ++lOffset, --i) {
+    double lDiff = std::max(*lOffset, 1.0 - (*lOffset));
+    lSum += lDiff * lDiff;
+  }
+
+  return lSum / lNbPixels;
+}
+

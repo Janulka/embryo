@@ -1,0 +1,25 @@
+#ifndef CHEMICAL_ASPECT_H
+#define CHEMICAL_ASPECT_H
+
+#include "EmbryoAspect.h"
+
+
+
+namespace embryo {
+  class ChemicalAspect : public EmbryoAspect {
+  private:
+    size_t mChemicalIndex;
+
+  public:
+    ChemicalAspect(size_t inChemicalIndex);
+
+    virtual ~ChemicalAspect();
+
+    virtual void set(const Embryo& inEmbryo, Picture& outPicture);
+  }
+  ; // class ChemicalAspect
+} // namespace embryo
+
+
+
+#endif /* CHEMICAL_ASPECT_H */

@@ -1,0 +1,31 @@
+#ifndef EMBRYO_VIEW_H
+#define EMBRYO_VIEW_H
+
+#include "Widget.hpp"
+#include "EmbryoAspect.hpp"
+
+
+
+namespace embryo {
+  class EmbryoView : public Widget, public EmbryoListener {
+  private:
+    Picture mPicture;
+    EmbryoAspect::Handle mAspect;
+
+  public:
+    EmbryoView(Embryo& inEmbryo, EmbryoAspect::Handle inAspect);
+
+    virtual ~EmbryoView();
+
+    virtual void paint(cairo_t* inContext);
+
+    virtual void onInit(const Embryo& inEmbryo);
+
+    virtual void onUpdate(const Embryo& inEmbryo);
+  }
+  ; // class EmbryoView
+} // namespace embryo
+
+
+
+#endif /* EMBRYO_VIEW_H */

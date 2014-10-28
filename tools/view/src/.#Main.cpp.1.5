@@ -1,0 +1,709 @@
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <argp.h>
+#include <algorithm>
+#include "SDL.h"
+
+#include "embryo/ArrayOps.hpp"
+#include "embryo/Evaluator.hpp"
+#include "Widget.hpp"
+#include "WidgetContainer.hpp"
+#include "EmbryoView.hpp"
+#include "ChemicalAspect.hpp"
+#include "ColourAspect.hpp"
+#include "StateAspect.hpp"
+#include "embryo/Picture.hpp"
+
+using namespace std;
+using namespace embryo;
+
+
+
+int gWidth = 512;
+int gHeight = 512;
+int gVideoFlags = SDL_SWSURFACE | SDL_RESIZABLE;
+//int gVideoFlags = SDL_HWSURFACE | SDL_ANYFORMAT | SDL_HWPALETTE| SDL_DOUBLEBUF | SDL_RESIZABLE;
+
+class CmdLineConf {
+    size_t mWidth, mHeight;
+    std::string mEmbryoFileName;
+    std::string mParamFileName;
+    std::string mCellFileName;
+    std::string mTargetFileName;
+    std::string mTestPath;
+public:
+
+    CmdLineConf() : mWidth(0), mHeight(0) {
+    }
+
+    inline const size_t width() const {
+        return mWidth;
+    }
+
+    inline size_t& width() {
+        return mWidth;
+    }
+
+    inline const size_t height() const {
+        return mWidth;
+    }
+
+    inline size_t& height() {
+        return mHeight;
+    }
+
+    inline const std::string& embryoFileName() const {
+        return mEmbryoFileName;
+    }
+
+    inline std::string& embryoFileName() {
+        return mEmbryoFileName;
+    }
+
+    inline const std::string& paramFileName() const {
+        return mParamFileName;
+    }
+
+    inline std::string& paramFileName() {
+        return mParamFileName;
+    }
+
+    inline const std::string& cellFileName() const {
+        return mCellFileName;
+    }
+
+    inline std::string& cellFileName() {
+        return mCellFileName;
+    }
+
+    inline const std::string& targetFileName() const {
+        return mTargetFileName;
+    }
+
+    inline std::string& targetFileName() {
+        return mTargetFileName;
+    }
+
+    inline const std::string& testContentPath() const {
+        return mTestPath;
+    }
+
+    inline std::string& testContentPath() {
+        return mTestPath;
+    }
+}
+; // struct CmdLineConf
+
+
+
+const char* argp_program_version = "embryo-view";
+
+const char *argp_program_bug_address = "<janahlava@gmail.com>";
+
+static char doc[] = "embryo-view -- Viewer for embryogenic flags";
+
+static struct argp_option options[]
+        = {
+    {
+        "embryo", 'e', "EMBRYO", 0,
+        "Embryo configuration file"
+    },
+    {
+        "parameters", 'p', "PARAMETERS", 0,
+        "Parameters file"
+    },
+    {
+        "cells", 's', "CELLS", 0,
+        "Cells parameters file"
+    },
+    {
+        "width", 'w', "WIDTH", 0,
+        "Width of the embryo (override the one from the embryo configuration files)"
+    },
+    {
+        "height", 'h', "HEIGHT", 0,
+        "Height of the embryo (override the one from the embryo configuration files)"
+    },
+    {
+        "target", 't', "TARGET", 0,
+        "Target picture (as a PGM file)"
+    },
+    {
+        "path", 'c', "PATH", 0,
+        "test content full path"
+    },
+    {
+        0
+    }
+};
+
+template <typename T>
+static T
+str2(const char* inStr) {
+    T lValue;
+    istringstream lBuffer(inStr);
+    lBuffer >> lValue;
+    return lValue;
+}
+
+static error_t
+parseCmdLineOptions(int key, char* arg, struct argp_state* state) {
+    CmdLineConf* lCmdLineConf = (CmdLineConf*) state->input;
+
+    switch (key) {
+        case 'e':
+            lCmdLineConf->embryoFileName() = arg;
+            break;
+
+        case 'p':
+            lCmdLineConf->paramFileName() = arg;
+            break;
+
+        case 's':
+            lCmdLineConf->cellFileName() = arg;
+            break;
+
+        case 'w':
+            lCmdLineConf->width() = str2<size_t > (arg);
+            break;
+
+        case 'h':
+            lCmdLineConf->height() = str2<size_t > (arg);
+            break;
+
+        case 't':
+            lCmdLineConf->targetFileName() = arg;
+            break;
+
+        case 'c':
+            lCmdLineConf->testContentPath() = arg;
+            break;
+
+        case ARGP_KEY_ARG:
+            break;
+
+        case ARGP_KEY_END:
+            break;
+
+        default:
+            return ARGP_ERR_UNKNOWN;
+    }
+
+    return 0;
+}
+
+
+
+static struct argp argp
+        = {
+    options, parseCmdLineOptions, 0, doc
+};
+
+void
+safeOpen(ifstream& inFile, const std::string& inFileName) {
+    inFile.open(inFileName.c_str());
+    if (!inFile.good()) {
+        cerr
+                << "Unable to open '"
+                << inFileName
+                << "'"
+                << endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
+void
+savePicture(Picture& inPic, const std::string& inPicFileName) {
+    try {
+        if (!(inPicFileName.empty())) {
+            ofstream lFile((inPicFileName + ".pgm").c_str());
+            savePGM(lFile, inPic);
+        }
+    } catch (Exception& inException) {
+        cerr
+                << "Error while writing 'embryo.pgm' :\n"
+                << inException.getMessage()
+                << endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
+std::string
+buildWindowTitle(size_t inNbEpochs, double inCurrentFitness, bool inRunMode) {
+    ostringstream lBuffer;
+
+    lBuffer << argp_program_version << " | ";
+
+    lBuffer << inNbEpochs << " epochs";
+
+    lBuffer << argp_program_version << " | ";
+
+    lBuffer << inCurrentFitness << " fitness";
+
+    if (!inRunMode)
+        lBuffer << " (pause)";
+
+    return lBuffer.str();
+}
+
+//void paint(Picture & iPicture, SDL_Surface* inSurface) {
+//
+//    cairo_surface_t* lSurface =
+//            cairo_image_surface_create_for_data((unsigned char*) inSurface->pixels,
+//            CAIRO_FORMAT_ARGB32,
+//            inSurface->w,
+//            inSurface->h,
+//            inSurface->pitch);
+//
+//    cairo_t* lContext = cairo_create(lSurface);
+//    //cairo_set_source_surface(lContext, lSurface, 0, 0);
+//    cairo_set_source_rgb(lContext, 0.8, 0.8, 1.0);
+//    cairo_paint_with_alpha(lContext, 1.0);
+//    //    paint(lContext, 0, 0, inSurface->w, inSurface->h);
+//
+//    double lSize = 0.9 * min(inSurface->w, inSurface->h);
+//    double lX = 0 + (inSurface->w - lSize) / 2;
+//    double lY = 0 + (inSurface->h - lSize) / 2;
+//
+//    cairo_matrix_t lGlobalMatrix;
+//
+//    cairo_get_matrix(lContext, &lGlobalMatrix);
+//    cairo_translate(lContext, lX, lY);
+//    cairo_scale(lContext, lSize, lSize);
+//
+//    //        mWidget->paint(inContext);
+//
+//
+//    double lRectWidth = 1.0 / (double) iPicture.width(); // size of the cell of drawn aspect object (color, state, chemical)
+//    double lShift = 0.05 * lRectWidth; // space between cells
+//
+//    AspectCellContainer acc = iPicture.getContainer();
+//    AspectCellIterator aciBegin;
+//    AspectCellIterator aciEnd;
+//
+//    //    iPicture.getAspectCellsContainer(acc);
+//    //      iPicture.getAspectCells(aciBegin, aciEnd);
+//    aciBegin = acc.begin();
+//    aciEnd = acc.end();
+//
+//    int c = 0;
+//    while (aciBegin != aciEnd) {
+//
+//        int lY = (*aciBegin)->getPositionY();
+//        int lX = (*aciBegin)->getPositionX();
+//        int lSize = (*aciBegin)->getSize();
+//        double lAspect = (*aciBegin)->getAspect();
+//
+//        //        printf("%d> x: %d, y: %d, s: %d, a: %e \n", ++c, lX, lY, lSize, lAspect);
+//
+//        cairo_set_source_rgb(lContext, 1.0, 1.0, 1.0);
+//        cairo_rectangle(lContext, lX + lShift, lY + lShift, lSize - lShift, lSize - lShift);
+//        cairo_set_source_rgb(lContext, lAspect, lAspect, lAspect);
+//        cairo_fill(lContext);
+//        ++aciBegin;
+//    }
+//
+//    cairo_set_matrix(lContext, &lGlobalMatrix);
+//    cairo_destroy(lContext);
+//}
+
+int main(int argc, char* argv[]) {
+    // Parse the command line
+    CmdLineConf lCmdLineConf;
+    argp_parse(&argp, argc, argv, 0, 0, &lCmdLineConf);
+
+    Picture lTargetPic;
+    double lMaxDist = -1.0;
+
+    std::string lTargetFileName = (lCmdLineConf.testContentPath() + lCmdLineConf.targetFileName()).c_str(); //lCmdLineConf.targetFileName();
+    if (!(lTargetFileName.empty())) {
+        // Load the target picture
+        //	  Picture lTargetPic;
+        try {
+            ifstream lFile;
+            safeOpen(lFile, lTargetFileName);
+//            lTargetPic = loadPGM(lFile);
+            loadPGM(lFile, lTargetPic);
+            lMaxDist = maxDistance(lTargetPic);
+        } catch (embryo::Exception& inException) {
+            cerr
+                    << "Error while loading picture to compare'"
+                    << lCmdLineConf.targetFileName()
+                    << "' :\n  "
+                    << inException.getMessage()
+                    << endl;
+            //return EXIT_FAILURE;
+        }
+    }
+
+
+
+
+    // Checks if some files are missing
+    if (lCmdLineConf.embryoFileName().empty()) {
+        cerr << "No embryo file specified" << endl;
+        return EXIT_FAILURE;
+    }
+    std::string lEmbryoFileName = lCmdLineConf.embryoFileName();
+
+    // Load the embryo
+    //Embryo::Handle lEmbryo;
+    HandleT<Embryo> lEmbryo;
+    try {
+        ifstream lFile;
+        //safeOpen(lFile, (lCmdLineConf.testContentPath() + "embryo.conf").c_str()); //lEmbryoConf);
+        safeOpen(lFile, (lCmdLineConf.testContentPath() + lCmdLineConf.embryoFileName()).c_str());
+        lEmbryo = Embryo::load(lFile, 0, (lCmdLineConf.testContentPath()).c_str());
+        //ifstream lFile;
+        //safeOpen(lFile, lCmdLineConf.embryoFileName());
+        //lEmbryo = Embryo::load(lFile, 0, (CmdLineConf.testContentPath()).c_str());
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "Error while loading embryo conf '"
+                << (lCmdLineConf.testContentPath() + lCmdLineConf.embryoFileName()).c_str()
+                << "' :\n  "
+                << inException.getMessage()
+                << endl;
+        return EXIT_FAILURE;
+    }
+
+    //TODO: reshape
+    //  // Reshape the embryo if asked for it
+    //  size_t lDesiredWidth = lEmbryo->width();
+    //  size_t lDesiredHeight = lEmbryo->height();
+    //
+    //  if (lCmdLineConf.width() != 0)
+    //    lDesiredWidth = lCmdLineConf.width();
+    //
+    //  if (lCmdLineConf.height() != 0)
+    //    lDesiredHeight = lCmdLineConf.height();
+    //
+    //  lEmbryo->reshape(lDesiredWidth, lDesiredHeight);
+
+    // Load the model parameters
+    try {
+        ifstream lFile;
+        safeOpen(lFile, (lCmdLineConf.testContentPath() + lCmdLineConf.paramFileName()).c_str());
+        //safeOpen(lFile, lCmdLineConf.paramFileName());
+        arrayd::load(lFile, lEmbryo->controller().parameters(), lEmbryo->controller().nbParameters());
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "Error while loading NN controller params '"
+                << (lCmdLineConf.testContentPath() + lCmdLineConf.paramFileName()).c_str()
+                << "' :\n"
+                << inException.getMessage()
+                << endl;
+        return EXIT_FAILURE;
+    }
+
+    lEmbryo->initCells();
+
+//    //load cells
+//    try {
+//        ifstream lFile;
+//        safeOpen(lFile, (lCmdLineConf.testContentPath() + lCmdLineConf.cellFileName()).c_str());
+//        lEmbryo->loadCells(lFile);
+//    } catch (embryo::Exception& inException) {
+//        cerr
+//                << "Error while loading cells params file '"
+//                << (lCmdLineConf.testContentPath() + lCmdLineConf.cellFileName()).c_str()
+//                << "' :\n"
+//                << inException.getMessage()
+//                << endl;
+//        return EXIT_FAILURE;
+//    }
+
+
+    // Setup a randomizer
+    Randomizer lRandomizer;
+    lRandomizer.init(1985);
+
+
+    //////new version
+
+    vector<EmbryoView*> evChem;
+    vector<EmbryoView*> evStat;
+    vector<Picture*> picChem;
+    vector<Picture*> picStat;
+
+    // Setup the user interface
+    WidgetContainer lWidgetContainer;
+
+    lWidgetContainer.push();
+
+    lWidgetContainer.push();
+    for (size_t i = 0; i < lEmbryo->nbChemicals(); ++i) {
+        EmbryoView * ev = new EmbryoView(*lEmbryo, new ChemicalAspect(i));
+        picChem.push_back(ev->getPictureP());
+        evChem.push_back(ev);
+        lWidgetContainer.addWidget(ev);
+        printf("i: %d", i);
+    }
+    lWidgetContainer.pop();
+
+    lWidgetContainer.push();
+    for (size_t i = 0; i < lEmbryo->nbStates(); ++i) {
+        EmbryoView * ev = new EmbryoView(*lEmbryo, new StateAspect(i));
+        picStat.push_back(ev->getPictureP());
+        evStat.push_back(ev);
+        lWidgetContainer.addWidget(ev); //new EmbryoView(*lEmbryo, new StateAspect(i)));
+        printf("i: %d", i);
+    }
+    lWidgetContainer.pop();
+
+    lWidgetContainer.pop();
+
+    lWidgetContainer.push();
+    EmbryoView * evColor = new EmbryoView(*lEmbryo, new ColourAspect());
+    Picture * lPicColorP = evColor->getPictureP();
+    lWidgetContainer.addWidget(evColor);
+    lWidgetContainer.pop();
+
+    lWidgetContainer.pop();
+    // lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new ColourAspect()));
+
+    /*
+     //////old version
+  
+      // Setup the user interface
+      WidgetContainer lWidgetContainer;
+      lWidgetContainer.push();
+      lWidgetContainer.push();
+      for(size_t i = 0; i < lEmbryo->nbChemicals(); ++i)
+        lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new ChemicalAspect(i)));
+      lWidgetContainer.pop();
+      lWidgetContainer.push();
+      for(size_t i = 0; i < lEmbryo->nbStates(); ++i)
+        lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new StateAspect(i)));
+      lWidgetContainer.pop();
+      lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new ColourAspect()));
+      lWidgetContainer.pop();
+      lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new ColourAspect()));
+     */
+
+    // SDL initialization
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
+        cerr << "Unable to init SDL: " << SDL_GetError();
+        exit(EXIT_FAILURE);
+    }
+
+    SDL_Surface* lScreen =
+            SDL_SetVideoMode(gWidth, gHeight, 32, gVideoFlags);
+
+    if (lScreen != NULL) {
+        std::cout << "The current video surface bits per pixel is " << (int) lScreen->format->BitsPerPixel << std::endl;
+    } else {
+        std::cerr << "Video initialization failed: " << SDL_GetError() << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (!lScreen) {
+        cerr
+                << "Unable to set " << gWidth << 'x' << gHeight
+                << " video : " << SDL_GetError()
+                << endl;
+        return EXIT_FAILURE;
+    }
+
+
+    // Main event loop
+    bool lRunMode = true;
+    bool lScrambleMode = false;
+    bool lPaintRequested = true;
+    size_t lNbUpdates = 0;
+
+    double outSimilarity = -1.0;
+    SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, outSimilarity, lRunMode).c_str(), "ICON");
+
+    //TODO:
+
+
+    size_t pathLength;
+    //cout << "Splitting: " << str << endl;
+    pathLength = lTargetFileName.find_last_of("/\\");
+    cout << " folder: " << lTargetFileName.substr(0, pathLength) << endl;
+    string lPicName = lTargetFileName.substr(pathLength + 1);
+    cout << " file: " << lPicName << endl;
+
+    size_t nameLength = lPicName.find_last_of(".");
+    string lRawName = lPicName.substr(0, nameLength);
+    cout << " name: " << lRawName << endl;
+    string lSuffix = lPicName.substr(nameLength + 1);
+    cout << " suffix: " << lSuffix << endl;
+
+    size_t lBorder = lEmbryo->getBorderValue(lRawName);
+    //double lBorder = lEmbryo->getBorderValue(lPicName);
+
+
+    cout << lBorder << " lEmbryo->init " << lPicName << endl;
+    lEmbryo->init(lBorder);
+
+    //    Picture lPic(lEmbryo->width(), lEmbryo->height()); //pic as a reference to mPicture property of EmbryoView
+
+    const int lHistorySize = 10;
+    vector<double> lSimilarities(lHistorySize);
+    for (int i = 0; i < lHistorySize; i++)
+        lSimilarities[i] = 4;
+
+    for (bool lMustQuit = false; !lMustQuit;) {
+        SDL_Event lEvent;
+        while (SDL_PollEvent(&lEvent)) {
+            switch (lEvent.type) {
+                case SDL_KEYDOWN:
+                    switch (lEvent.key.keysym.sym) {
+                        case SDLK_ESCAPE:
+                            lMustQuit = true;
+                            break;
+
+                        case SDLK_RIGHT:
+                            if (!lRunMode) {
+                                lEmbryo->update();
+                                lNbUpdates += 1;
+                                lPaintRequested = true;
+                                SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, outSimilarity, lRunMode).c_str(), "ICON");
+                            }
+                            break;
+
+                        case SDLK_p: //print active window client
+                            lEmbryo->getColours(*lPicColorP);
+                            savePicture(*lPicColorP, "embryo");
+                            break;
+
+                        case SDLK_SPACE:
+                            lRunMode = !lRunMode;
+                            SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, outSimilarity, lRunMode).c_str(), "ICON");
+                            break;
+
+                        case SDLK_n:
+                            lScrambleMode = true;
+                            break;
+
+                        default:
+                            break;
+                    }
+                    break;
+
+                case SDL_KEYUP:
+                    switch (lEvent.key.keysym.sym) {
+                        case SDLK_n:
+                            lScrambleMode = false;
+                            break;
+
+                        default:
+                            break;
+                    }
+                    break;
+
+                case SDL_VIDEORESIZE:
+                    lScreen =
+                            SDL_SetVideoMode(lEvent.resize.w, lEvent.resize.h, 32, gVideoFlags);
+                    lPaintRequested = true;
+                    break;
+
+                case SDL_QUIT:
+                    lMustQuit = true;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        if (lScrambleMode) {
+            lEmbryo->scramble(lRandomizer, 1.0);
+            lPaintRequested = true;
+        }
+
+        if (lRunMode) {
+            lEmbryo->update();
+            lNbUpdates += 1;
+            lPaintRequested = true;
+
+            SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, outSimilarity, lRunMode).c_str(), "ICON");
+
+            if ((lNbUpdates % 5) == 0) {
+                lEmbryo->getColours(*lPicColorP);
+                std::string lString;
+                std::stringstream lStringStream;
+                lStringStream << lNbUpdates;
+                lString = lStringStream.str();
+                //	lString = "embryo"+lString;
+                //	std::stringstream lStringStream2;
+                //	lStringStream2 << lCmdLineConf.embryoFileName();
+                std::string lString2;
+                lString2 = lCmdLineConf.testContentPath() + lEmbryoFileName + lString;
+                //char lString[12];
+                //snprintf(lString, sizeof(lString), "%d", lNbUpdates);
+                savePicture(*lPicColorP, lString2);
+            }
+
+            if (lMaxDist > 0) { //		lTargetPic != null
+                lEmbryo->getColours(*lPicColorP);
+
+                //TODO: compute the fitness
+                outSimilarity = embryo::distance(*lPicColorP, lTargetPic) / lMaxDist;
+            }
+
+
+            SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, outSimilarity, lRunMode).c_str(), "ICON");
+            /*
+                    if (outSimilarity < 0.0013){
+                            lRunMode = !lRunMode;
+                            lMustQuit = true;
+                    }
+
+                    double lastAvgSimilarity = 0.0;
+                    for (int i = 0; i < lHistorySize; i++)
+                            lastAvgSimilarity += lSimilarities[i];
+	
+                    lastAvgSimilarity /= lHistorySize;
+
+                    if (outSimilarity > lastAvgSimilarity){
+                            lRunMode = !lRunMode;
+                            lMustQuit = true;
+                    }
+
+                    for (int i = (lHistorySize - 1); i > 0; i--)
+                            lSimilarities[i] = lSimilarities[i-1];
+                    lSimilarities[0] = outSimilarity;
+
+             */
+            if (lPaintRequested) {
+                int counter = 0;
+                lEmbryo->getColours(*lPicColorP);
+                vector<Picture*>::iterator itr = picChem.begin();
+                while (itr != picChem.end()) {
+                    lEmbryo->getChemicals(**itr, counter++);
+                    ++itr;
+                }
+                counter = 0;
+                itr = picStat.begin();
+                while (itr != picStat.end()) {
+                    lEmbryo->getStates(**itr, counter++);
+                    ++itr;
+                }
+
+                lWidgetContainer.paint(lScreen);
+
+                //  SDL_UpdateRect(lScreen, 0, 0, 0, 0);
+
+                int update = SDL_Flip(lScreen);
+                if (update == -1) {
+                    cerr << "error by painting " << SDL_GetError() << std::endl;
+                    return EXIT_FAILURE;
+                }
+
+                lPaintRequested = false;
+            }
+        }
+
+        SDL_Delay(10);
+    }
+
+    // Job done
+    SDL_Quit();
+    return EXIT_SUCCESS;
+}
+

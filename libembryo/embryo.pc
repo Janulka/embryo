@@ -1,0 +1,10 @@
+prefix=/home/jana/src/embryo3x/libembryo
+libdir=/home/jana/src/embryo3x/libembryo/lib
+includedir=/home/jana/src/embryo3x/libembryo/include
+plugindir=/home/jana/src/embryo3x/libembryo/lib/embryo
+
+Name: embryo
+Description: A C++ framework for the embryogenic flag problem.
+Version: 3.0
+Libs: -L${libdir} -lembryo
+Cflags: -I${includedir}/embryo

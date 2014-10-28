@@ -1,0 +1,50 @@
+#include <cmath>
+#include "EmbryoView.hpp"
+
+using namespace embryo;
+
+
+
+EmbryoView::EmbryoView(Embryo& inEmbryo, EmbryoAspect::Handle inAspect) : mPicture(inEmbryo.width(), inEmbryo.height()), mAspect(inAspect)  {
+  inEmbryo.addListener(this);
+}
+
+
+
+EmbryoView::~EmbryoView() { }
+
+
+
+void
+EmbryoView::onInit(const Embryo& inEmbryo) {
+  mPicture.fill(0.0);
+}
+
+
+
+void
+EmbryoView::onUpdate(const Embryo& inEmbryo) {
+  mAspect->set(inEmbryo, mPicture);
+}
+
+
+
+void
+EmbryoView::paint(cairo_t* inContext) {
+  const double* lPixel = mPicture.pixels();
+
+  double lRectWidth = 1.0 / mPicture.width();
+  double lShift = 0.05 * lRectWidth;
+
+  for(size_t i = 0; i < mPicture.height(); ++i) {
+    double lY = i * lRectWidth;
+
+    for(size_t j = 0; j < mPicture.width(); ++j, ++lPixel) {
+      double lX = j * lRectWidth;
+
+      cairo_set_source_rgb(inContext, *lPixel, *lPixel, *lPixel);
+      cairo_rectangle(inContext, lX + lShift, lY + lShift, lRectWidth - lShift, lRectWidth - lShift);
+      cairo_fill(inContext);
+    }
+  }
+}

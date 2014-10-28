@@ -1,0 +1,19 @@
+#include "ChemicalAspect.hpp"
+
+using namespace embryo;
+
+
+
+ChemicalAspect::ChemicalAspect(size_t inChemicalIndex) : mChemicalIndex(inChemicalIndex) { }
+
+
+
+ChemicalAspect::~ChemicalAspect() { }
+
+
+
+void
+ChemicalAspect::set(const Embryo& inEmbryo, Picture& outPicture) {
+  inEmbryo.getChemicals(outPicture, mChemicalIndex);
+  outPicture.affineTransform(0.5, 0.5);
+}

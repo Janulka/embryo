@@ -1,0 +1,592 @@
+#include <argp.h>
+#include <sstream>
+#include <fstream>
+#include <iostream>
+#include <embryo.hpp>
+#include <embryo/ArrayOps.hpp>
+#include "cmaes_interface.hpp"
+#include <sys/types.h>
+#include <unistd.h>
+#include <iomanip>
+#include "SDL/SDL.h"
+#include "Widget.hpp"
+#include "WidgetContainer.hpp"
+#include "EmbryoView.hpp"
+#include "ChemicalAspect.hpp"
+#include "ColourAspect.hpp"
+#include "StateAspect.hpp"
+#include "embryo/Picture.hpp"
+
+using namespace std;
+using namespace cmaes;
+using namespace embryo;
+
+int gWidth = 512;
+int gHeight = 512;
+int gVideoFlags = SDL_SWSURFACE | SDL_RESIZABLE;
+bool bIsGui = false;
+
+class CmdLineConf {
+    long mRandomSeed;
+    std::string mConfigFileName;
+    std::string mTestContentPath;
+
+public:
+
+    CmdLineConf() {
+        mRandomSeed = 0;
+    }
+
+    inline const std::string& configFileName() const {
+        return mConfigFileName;
+    }
+
+    inline std::string& configFileName() {
+        return mConfigFileName;
+    }
+
+    inline std::string& testContentPath() {
+        return mTestContentPath;
+    }
+
+    inline long seed() const {
+        return mRandomSeed;
+    }
+
+    inline long& seed() {
+        return mRandomSeed;
+    }
+}
+; // struct CmdLineConf
+
+
+
+const char* argp_program_version = "embryo-optim";
+
+const char *argp_program_bug_address = "<jana@lri.fr>";
+
+static char doc[] = "embryo-optim -- CMAES optimizer for cellular embryogenetic flags";
+
+static struct argp_option options[]
+        = {
+    {
+        "seed", 's', "SEED", 0,
+        "Random seed value"
+    },
+    {
+        "path", 'p', "PATH", 0,
+        "test content path with embryo configuration file and pictures files"
+    },
+    {
+        "config", 'c', "CONFIG", 0,
+        "CMAES configuration file"
+    },
+    {
+        "graphicalOutput", 'g', "GUI", 0,
+        " "
+    },
+    {
+        0
+    }
+};
+
+static error_t
+parseCmdLineOptions(int key, char* arg, struct argp_state* state) {
+    CmdLineConf* lCmdLineConf = (CmdLineConf*) state->input;
+
+    switch (key) {
+        case 'c':
+            lCmdLineConf->configFileName() = arg;
+            break;
+
+        case 'p':
+            lCmdLineConf->testContentPath() = arg;
+            break;
+
+        case 'g':
+            bIsGui = true;
+            break;
+
+        case 's':
+        {
+            long lValue;
+            istringstream lBuffer(arg);
+            lBuffer >> lValue;
+            lCmdLineConf->seed() = lValue;
+        }
+            break;
+
+        case ARGP_KEY_ARG:
+            break;
+
+        case ARGP_KEY_END:
+            break;
+
+        default:
+            return ARGP_ERR_UNKNOWN;
+    }
+
+    return 0;
+}
+
+
+
+static struct argp argp
+        = {
+    options, parseCmdLineOptions, 0, doc
+};
+
+int
+safeOpen(ifstream& inFile, const std::string& inFileName) {
+    inFile.open(inFileName.c_str());
+    if (!inFile.good()) {
+        cerr
+                << "Unable to open '"
+                << inFileName
+                << "'"
+                << endl;
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
+
+std::string
+buildWindowTitle(size_t inNbFitness, double inCurrentFitness) {
+    ostringstream lBuffer;
+
+    lBuffer << argp_program_version << " | ";
+
+    lBuffer << inNbFitness << " pop ";
+
+    lBuffer << argp_program_version << " | ";
+
+    lBuffer << inCurrentFitness << " fitness";
+
+    return lBuffer.str();
+}
+
+//double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbSteps, double& outSimilarity, EmbryoView* evColor, vector<EmbryoView*>& evChem, vector<EmbryoView*>& evStat, SDL_Surface* lScreen, WidgetContainer & iWidgetContainer)//, const Picture& mTargetPic)
+
+double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbSteps, double& outSimilarity, Picture*& picColor, vector<Picture*>& picChem, vector<Picture*>& picStat, SDL_Surface* lScreen, WidgetContainer & iWidgetContainer)//, const Picture& mTargetPic)
+{
+
+    iEmbryo.setupController(inVector);
+
+    size_t lNbSteps = 0;
+
+    //for(init() && int pic = 0; update() && (lNbSteps < nbStepsMax()) && pic < ; lNbSteps += 1);
+
+    outNbSteps = 0;
+    outSimilarity = 0;
+    double lSimilaritySum = 0;
+    //double* lSimilarity = new double[mPicsNo];
+    //vector<double> lSimilarity(mPicsNo);
+    double lSimilarity;
+    //double lSimilarity[mPicsNo];
+    size_t lNbStepsMax = iEmbryo.nbStepsMax();
+    size_t lPicsNo = iEmbryo.getPicsNumber();
+
+    double lPenalty = double(outNbSteps) / (lPicsNo * lNbStepsMax);
+
+    double bestFitness = 1.0;
+    double worstFitness = 0.0;
+
+    //	for (size_t i = 0, init((1/(mPicsNo-1)) * i); i < mPicsNo; i++) {
+    for (size_t i = 0, init(i); i < lPicsNo; i++) {
+        //cout << "embryo::eval no. " << i << endl;
+        //init();
+        lNbSteps = 0;
+        lSimilarity = 0;
+        //for(resetMonitor((1/(mPicsNo-1)) * i); update() && (lNbSteps < nbStepsMax()); lNbSteps += 1);
+        for (iEmbryo.resetMonitor(i); iEmbryo.update() && (lNbSteps < lNbStepsMax); lNbSteps += 1) { // && (lNbSteps > 15)
+            if (bIsGui) {
+                int counter = 0;
+                iEmbryo.getColours(*picColor);
+                vector<Picture*>::iterator itr = picChem.begin();
+                while (itr != picChem.end()) {
+                    iEmbryo.getChemicals(**itr, counter++);
+                    ++itr;
+                }
+                counter = 0;
+                itr = picStat.begin();
+                while (itr != picStat.end()) {
+                    iEmbryo.getStates(**itr, counter++);
+                    ++itr;
+                }
+                //            iWidgetContainer.paint(lScreen);
+
+                //  SDL_UpdateRect(lScreen, 0, 0, 0, 0);
+
+                int update = SDL_Flip(lScreen);
+                if (update == -1) {
+                    cerr << "error by painting " << SDL_GetError() << std::endl;
+                    return EXIT_FAILURE;
+                }
+            }
+        }
+
+        if (lNbSteps < lNbStepsMax) {
+            lSimilarity = iEmbryo.getSimilarity(i);
+            double lPenalty = double(lNbSteps) / (double) lNbStepsMax;
+            //lSimilarity[i] *= (lPenalty * lPenalty + 1.0);
+            //            lSimilarity *= (lPenalty * lPenalty + 1.0);
+            //cout << "lSimilarity + penalty for " << i << " : " << lSimilarity << endl;
+        } else
+            lSimilarity = 1.0;
+
+        if (lSimilarity < bestFitness)
+            bestFitness = lSimilarity;
+        if (lSimilarity > worstFitness)
+            worstFitness = lSimilarity;
+
+        lSimilaritySum += lSimilarity;
+        outNbSteps += lNbSteps;
+        lNbSteps = 0;
+    }
+
+    lPenalty = (double) (outNbSteps) / (double) (lPicsNo * lNbStepsMax);
+    //00
+    outSimilarity = lSimilaritySum / (double) lPicsNo;
+
+
+    if (outSimilarity > 1) {
+        outSimilarity = 1;
+    } else if (outSimilarity < 0) {
+
+        outSimilarity = 0;
+    }
+
+    return outSimilarity;
+
+}
+
+int
+main(int argc, char* argv[]) {
+    // Parse the command line
+    CmdLineConf lCmdLineConf;
+    argp_parse(&argp, argc, argv, 0, 0, &lCmdLineConf);
+
+    // Checks if some files are missing
+    if (lCmdLineConf.testContentPath().empty()) {
+        cerr << "No path specified" << endl;
+        return EXIT_FAILURE;
+    }
+    if (lCmdLineConf.configFileName().empty()) {
+        cerr << "No cmaes config file specified" << endl;
+        return EXIT_FAILURE;
+    }
+    // Load the properties
+    HandleT<Embryo> lEmbryo;
+    try {
+        ifstream lFile;
+        // safeOpen(lFile, lCmdLineConf.propertiesFileName());
+        //safeOpen(lFile, lCmdLineConf.testContentPath());
+        //	std::string lEmbryoConf = lCmdLineConf.testContentPath() + "/embryo.conf";
+        safeOpen(lFile, (lCmdLineConf.testContentPath() + "embryo.conf").c_str()); //lEmbryoConf);
+        //if (!(inPicFileName.empty())) {
+        //ifstream lFile(("embryo.conf").c_str());
+        //safeOpen(lFile, inPic);
+        //safeOpen(lFile, "embryo.conf");
+        //   lEmbryo = Embryo::load(lFile, lCmdLineConf.seed());
+        lEmbryo = Embryo::load(lFile, lCmdLineConf.seed(), (lCmdLineConf.testContentPath()).c_str());
+        lEmbryo->initCells();
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "Error while loading embryo configuration file '"
+                //<< lEmbryoConf
+                << (lCmdLineConf.testContentPath() + "embryo.conf").c_str()
+                << "' :\n  "
+                << inException.getMessage()
+                << endl;
+        return EXIT_FAILURE;
+    }
+
+    pid_t myPid = getpid();
+    try {
+        ofstream lOutFile((lCmdLineConf.testContentPath() + "pid").c_str());
+        lOutFile << myPid << endl;
+        lOutFile.close(); //close the output file
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "Error while saving process pid value to external file'"
+                << "' :\n  "
+                << inException.getMessage()
+                << endl;
+        return EXIT_FAILURE;
+    }
+
+    // GUI output
+    vector<EmbryoView*> evChem;
+    vector<EmbryoView*> evStat;
+    vector<Picture*> picChem;
+    vector<Picture*> picStat;
+    Picture * lPicColorP;
+    WidgetContainer lWidgetContainer;
+    SDL_Surface* lScreen;
+
+    if (bIsGui) {
+        lWidgetContainer.push();
+        //
+        //    lWidgetContainer.push();
+        //    for (size_t i = 0; i < lEmbryo->nbChemicals(); ++i) {
+        //        EmbryoView * ev = new EmbryoView(*lEmbryo, new ChemicalAspect(i));
+        //        picChem.push_back(ev->getPictureP());
+        //        evChem.push_back(ev);
+        //        lWidgetContainer.addWidget(ev);
+        //        printf("i: %d", i);
+        //    }
+        //    lWidgetContainer.pop();
+        //
+        //    lWidgetContainer.push();
+        //    for (size_t i = 0; i < lEmbryo->nbStates(); ++i) {
+        //        EmbryoView * ev = new EmbryoView(*lEmbryo, new StateAspect(i));
+        //        picStat.push_back(ev->getPictureP());
+        //        evStat.push_back(ev);
+        //        lWidgetContainer.addWidget(ev); //new EmbryoView(*lEmbryo, new StateAspect(i)));
+        //        printf("i: %d", i);
+        //    }
+        //    lWidgetContainer.pop();
+        //
+        //    lWidgetContainer.pop();
+
+        lWidgetContainer.push();
+
+        EmbryoView * evColor = new EmbryoView(*lEmbryo, new ColourAspect());
+        lPicColorP = evColor->getPictureP();
+        lWidgetContainer.addWidget(evColor);
+        lWidgetContainer.pop();
+
+        lWidgetContainer.pop();
+
+        // SDL initialization
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
+            cerr << "Unable to init SDL: " << SDL_GetError();
+            exit(EXIT_FAILURE);
+        }
+
+        lScreen = SDL_SetVideoMode(gWidth, gHeight, 32, gVideoFlags);
+
+        if (lScreen != NULL) {
+            std::cout << "The current video surface bits per pixel is " << (int) lScreen->format->BitsPerPixel << std::endl;
+        } else {
+            std::cerr << "Video initialization failed: " << SDL_GetError() << std::endl;
+            return EXIT_FAILURE;
+        }
+
+        if (!lScreen) {
+            cerr
+                    << "Unable to set " << gWidth << 'x' << gHeight
+                    << " video : " << SDL_GetError()
+                    << endl;
+            return EXIT_FAILURE;
+        }
+
+        //initial painting - target color pattern
+        //    lWidgetContainer.paint(lScreen, true);
+
+    }
+    // GUI output
+
+
+
+
+    /*
+     * Run CMAES (seal your belt and close your eyes)
+     */
+
+    // Init the CMAES state
+    cmaes_t lCmaesState;
+    double* lFitnessValues;
+    try {
+        lFitnessValues =
+                cmaes_init(&lCmaesState,
+                lEmbryo->controller().nbParameters(),
+                NULL,
+                NULL,
+                lCmdLineConf.seed(),
+                0,
+                lCmdLineConf.configFileName().c_str());
+        std::ostringstream outputString;
+        outputString << lFitnessValues[0];
+        cout << " \n lFitnessValues[0] contains: " << outputString.str();
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "Error while cmaes init fitness value '"
+                << "' :\n  "
+                << inException.getMessage()
+                << endl;
+        return EXIT_FAILURE;
+    }
+
+    // Dump useful infos
+    cout << "\n # " << cmaes_SayHello(&lCmaesState) << endl;
+
+    // CMAES iterations
+    size_t lPopSize = (size_t) cmaes_Get(&lCmaesState, "popsize");
+
+    vector<double> lSimilarities(lPopSize);
+    cout << "\n lSimilarities size: " << (int) lSimilarities.size() << " lPopsize: " << (int) lPopSize << endl;
+    bool lFirstGeneration = true;
+    double lBestEverSimilarity = 0.0;
+
+
+    std::ostringstream outputString2;
+    outputString2 << lBestEverSimilarity;
+    cout << "\n lBestEverSimilarity contains:" << outputString2.str() << endl;
+
+    char const* lStop;
+    while (!(lStop = cmaes_TestForTermination(&lCmaesState))) {
+        // Generate a new point cloud
+        //cout << "\n cmaes - test for termination \n";
+        double* const* lPop = cmaes_SamplePopulation(&lCmaesState);
+
+        //	cout << std::endl;
+        //	for (int i = 0; i < lCmaesState.sp.lambda; ++i) {
+        //		for (int j = 0; j < lCmaesState.sp.N; j++)
+        //			cout << lCmaesState.rgrgx[i][j] << " ";
+        //		cout << std::endl;
+        //	}
+
+        // Evaluate the points
+        for (size_t i = 0; i < lPopSize; ++i) {
+            size_t lNbSteps;
+            double lSimilarity;
+
+            Randomizer ran;
+            size_t size = 1;
+            ran.init(size);
+
+            /*int* pic[size];//lEmbryo->mTargetPic->
+            for(size_t i = size; i != 0; ++pic, --i) {
+             *pic = (ran.uint32()) % 2;
+              }*/
+
+            uint32_t ranInt = ran.uint32();
+            size_t pic;
+            pic = (size_t) (ranInt % 2);
+
+
+            //lFitnessValues[i] = lEvaluator.evaluate(lPop[i], lNbSteps, lSimilarity);
+            //lEmbryo->evaluate(lPop[i], lNbSteps, lSimilarity);
+
+            SDL_WM_SetCaption(buildWindowTitle(i, lFitnessValues[i]).c_str(), "ICON");
+
+            //            lFitnessValues[i] = lEmbryo->evaluate(lPop[i], lNbSteps, lSimilarity); //, lEmbryo->mTargetPic);
+
+            //            lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, evColor, evChem, evStat, lScreen, lWidgetContainer); //, lEmbryo->mTargetPic);
+            lEmbryo->initCells();
+
+            lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, lPicColorP, picChem, picStat, lScreen, lWidgetContainer); //, lEmbryo->mTargetPic);
+
+
+            //            int counter = 0;
+            //            lEmbryo->getColours(*lPicColorP);
+            //            vector<Picture*>::iterator itr = picChem.begin();
+            //            while (itr != picChem.end()) {
+            //                lEmbryo->getChemicals(**itr, counter++);
+            //                ++itr;
+            //            }
+            //            counter = 0;
+            //            itr = picStat.begin();
+            //            while (itr != picStat.end()) {
+            //                lEmbryo->getStates(**itr, counter++);
+            //                ++itr;
+            //            }
+            //            lWidgetContainer.paint(lScreen);
+            //
+            //            //  SDL_UpdateRect(lScreen, 0, 0, 0, 0);
+            //
+            //            int update = SDL_Flip(lScreen);
+            //            if (update == -1) {
+            //                cerr << "error by painting " << SDL_GetError() << std::endl;
+            //                return EXIT_FAILURE;
+            //            }
+
+
+            //	std::stringstream outputString;
+            //        outputString << lSimilarity;
+            //        cout << "\n new lSimilarity contains:\n" << outputString.str();
+
+
+            // lFitnessValues[i] = lSimilarity;
+            lSimilarities[i] = lSimilarity;
+
+            cout << " iterations: " << lNbSteps << " | fitnes: " << setprecision(6) << lFitnessValues[i] << ' ' << lSimilarities[i] << endl;
+
+
+            //            lWidgetContainer.clear(lScreen);
+//            sleep(5);
+        }
+
+        // Save the best genotype if it's the best ever
+        size_t lBestIndex = 0;
+        for (size_t i = 1; i < lPopSize; ++i)
+            if (lSimilarities[lBestIndex] > lSimilarities[i])
+                lBestIndex = i;
+
+        if (lFirstGeneration || (lBestEverSimilarity > lSimilarities[lBestIndex])) {
+            lBestEverSimilarity = lSimilarities[lBestIndex];
+
+            ofstream lFile("best.params");
+            if (!lFile)
+                cerr << "Unable to save the best genotype";
+
+            arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
+
+            //save x,y,size of cells also
+            ofstream lFile2("cells.params");
+            if (!lFile2)
+                cerr << "Unable to save the cells properties";
+            lEmbryo->saveCells(lFile2);
+
+            lFile.close();
+            lFile2.close();
+        }
+
+        if (((int) lPopSize % 20) == 0) {
+            std::string lString;
+            std::stringstream lStringStream;
+            lStringStream << lPopSize;
+            lString = lStringStream.str();
+            lString = "best.params." + lString;
+            const char* lConstString = lString.c_str();
+            ofstream lFile(lConstString);
+            if (!lFile)
+                cerr << "Unable to save the best genotype";
+            arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
+
+            lString = "cells.params." + lString;
+            lConstString = lString.c_str();
+            ofstream lFile2(lConstString);
+            if (!lFile2)
+                cerr << "Unable to save the cells properties";
+            lEmbryo->saveCells(lFile2);
+
+            lFile.close();
+            lFile2.close();
+        }
+
+        lFirstGeneration = false;
+
+        // Update the CMAES state
+        cmaes_UpdateDistribution(&lCmaesState, lFitnessValues);
+
+        // Print stuffs
+        cout
+                << "# "
+                << cmaes_Get(&lCmaesState, "eval") << ' ' // nb evals
+                << cmaes_Get(&lCmaesState, "generation") << ' ' // nb generation
+                << arrayd::minValue(lFitnessValues, lPopSize) // best generation fitness
+                << endl << endl;
+    }
+
+    // CMAES log
+    cmaes_WriteToFile(&lCmaesState, "all", "allcmaes.dat");
+    cmaes_exit(&lCmaesState);
+
+
+
+    // Job done
+    //    SDL_Quit();
+    return EXIT_SUCCESS;
+}

@@ -1,0 +1,47 @@
+8
+
+dir
+1152
+svn://subversion.lri.fr/tao/devert/embryo-flags/tools/optim
+svn://subversion.lri.fr/tao/devert
+
+
+
+2008-11-10T16:10:50.693307Z
+1131
+jana
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+12ce44ca-0708-0410-859c-808f910676e0
+
+include
+dir
+
+src
+dir
+
+Makefile
+file
+
+
+
+
+2008-11-10T15:39:40.000000Z
+67f1fd789be25fb632d1934f181889d8
+2008-11-10T16:10:50.693307Z
+1131
+jana
+has-props
+

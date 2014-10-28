@@ -1,0 +1,219 @@
+/*
+ *  libembryo
+ *  Copyright (C) 2008 by Alexandre Devert
+ *
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *                  Version 2, December 2004
+ *
+ *  Copyright (C) 2004 Sam Hocevar
+ *  14 rue de Plaisance, 75014 Paris, France
+ *  Everyone is permitted to copy and distribute verbatim or modified
+ *  copies of this license document, and changing it is allowed as long
+ *  as the name is changed.
+ *
+ *            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ *
+ *  0. You just DO WHAT THE FUCK YOU WANT TO.
+ */
+
+#include <vector>
+#include <sstream>
+#include <algorithm>
+#include "embryo/PGM.hpp"
+#include "embryo/Exception.hpp"
+
+using namespace std;
+using namespace embryo;
+
+
+
+namespace embryo {
+  long int
+  loadPGM_parseInteger(const std::string& inToken) {
+    char* lEndPtr;
+    long int lValue = strtol(inToken.c_str(), &lEndPtr, 10);
+
+    if (((*lEndPtr) != '\0') || (lValue < 0))
+      throw Exception("PGM integer number format error");
+
+    return lValue;
+  }
+
+
+
+  long int
+  loadPGM_parseInteger(const std::string& inToken, long int inMax) {
+    long int lValue = loadPGM_parseInteger(inToken);
+    if (lValue > inMax)
+      throw Exception("PGM integer number format error");
+
+    return lValue;
+  }
+
+
+
+
+  static void
+  loadPGM_dataChunk_binary(istream& inStream, Picture& inPic, size_t inFactor) {
+    double* lOffset = inPic.pixels();
+    size_t lNbPixels = inPic.width() * inPic.height();
+
+    // Read the bytes one by one
+    double lInvFactor = 1.0 / double(inFactor);
+
+    for(size_t i = lNbPixels; i != 0; --i, ++lOffset) {
+      // Read a byte
+      char lRawByte;
+      inStream.get(lRawByte);
+
+      // Check if end of file is reached
+      if (inStream.eof())
+        throw Exception("Unexcepted end of file");
+
+      // Copy the byte as a pixel value
+      int lPixel = (unsigned char)lRawByte;
+      (*lOffset) = lInvFactor * double(lPixel);
+    }
+  }
+
+
+
+  static void
+  loadPGM_dataChunk_ascii(istream& inStream, Picture& inPic, size_t inFactor) {
+    double* lOffset = inPic.pixels();
+    size_t lNbPixels = inPic.width() * inPic.height();
+
+    // Skip read the bytes one by one
+    double lInvFactor = 1.0 / double(inFactor);
+
+    for(size_t i = lNbPixels; i != 0; --i, ++lOffset) {
+      // Read a pixel value
+      unsigned short lPixel;
+      inStream >> lPixel;
+
+      // Check if end of file is reached
+      if (inStream.eof())
+        throw Exception("Unexcepted end of file");
+
+      // Copy the pixel value
+      (*lOffset) = lInvFactor * double(lPixel);
+    }
+  }
+
+
+
+  enum PGMTokeniserState {
+    idle, token, comment
+  }; // enum PGMTokeniserState
+
+
+
+  static void
+  loadPGM_infoChunk(istream& inStream,
+                    size_t& inX, size_t& inY, size_t& inFactor) {
+    // Tokenize the info chunk
+    ostringstream lBuffer;
+    vector<std::string> lTokenList;
+
+    enum PGMTokeniserState lState = idle;
+    while(lTokenList.size() < 3) {
+      // Read a byte
+      char lChar;
+      inStream.get(lChar);
+
+      // End of file reached
+      if (inStream.eof())
+        throw Exception("Unexcepted end of file");
+
+      // Parser automaton
+      switch(lState) {
+      case idle:
+        if (lChar == '#')
+          lState = comment;
+        else if (!isspace(lChar)) {
+          lState = token;
+          lBuffer << lChar;
+        }
+        break;
+
+      case comment:
+        if (lChar == '\n')
+          lState = idle;
+        break;
+
+      case token:
+        if (isspace(lChar) ||  (lChar == '#')) {
+          if (lChar == '#')
+            lState = comment;
+          else
+            lState = idle;
+
+          lTokenList.push_back(lBuffer.str());
+          lBuffer.str("");
+        } else
+          lBuffer << lChar;
+        break;
+      }
+    }
+
+    // Parse the info from the tokens
+    inX = loadPGM_parseInteger(lTokenList[0]);
+    inY = loadPGM_parseInteger(lTokenList[1]);
+    inFactor = loadPGM_parseInteger(lTokenList[2], 65535);
+  }
+} // namespace embryo
+
+
+
+Picture
+embryo::loadPGM(istream& inStream) {
+  // Check the PGM "magic number"
+  std::string lMagicNumber;
+  inStream >> lMagicNumber;
+
+  bool lBinaryFormat = true;
+
+  if (lMagicNumber == "P2")
+    lBinaryFormat = false;
+  else if (lMagicNumber != "P5")
+    throw Exception("PGM magic number not found");
+
+  // Read the picture informations
+  size_t lX, lY, lFactor;
+  loadPGM_infoChunk(inStream, lX, lY, lFactor);
+
+  // Load the pixels data
+  Picture lPic(lX, lY);
+
+  if (lBinaryFormat)
+    loadPGM_dataChunk_binary(inStream, lPic, lFactor);
+  else
+    loadPGM_dataChunk_ascii(inStream, lPic, lFactor);
+
+  // Job done
+  return lPic;
+}
+
+
+
+void
+embryo::savePGM(ostream& inStream, const Picture& inPicture) {
+  // PGM file format "magic number"
+  inStream << "P5" << '\n';
+
+  // Picture dimensions
+  inStream << inPicture.width() << ' ' << inPicture.height() << '\n';
+
+  // Discretization, 255 here
+  inStream << 255 << '\n';
+
+  // The picture datas, binary form
+  const double* lOffset = inPicture.pixels();
+  size_t lNbPixels = inPicture.width() * inPicture.height();
+
+  for(size_t i = lNbPixels; i != 0; --i, ++lOffset) {
+    int lByte = max(0, min(255, int(255.0f * (*lOffset))));
+    inStream.put(lByte);
+  }
+}

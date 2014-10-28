@@ -1,0 +1,26 @@
+#ifndef WIDGET_H
+#define WIDGET_H
+
+#include "SDL.h"
+#include <cairo/cairo.h>
+#include <embryo.hpp>
+
+
+
+namespace embryo {
+  class Widget : public Object {
+  public:
+    typedef HandleT<Widget> Handle;
+
+
+
+    virtual ~Widget();
+
+    virtual void paint(cairo_t* inContext);
+  }
+  ; // class Widget
+} // namespace embryo
+
+
+
+#endif /* WIDGET_H */

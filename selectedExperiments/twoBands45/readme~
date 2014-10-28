@@ -1,0 +1,9 @@
+make an experiment directory that contains embryo configuration file and target pictures.
+run embryo-optim with arguments -c for cmaes configuration file and -p for a path to the experiment directory. Use -g switch if you like to save MLP params for each generation.
+the output files (best weights of MLP controller) "best.params" and "best.cells.params" will be stored in the current directory. 
+the evaluation process is printed to the standard output.
+
+run embryo-view from an experiment directory as e.g.:
+../../tools/view/embryo-view -p best.params -s best.cell.params -e embryo.conf -t triangle.pgm
+
+triangle.pgm = twobands45 flag

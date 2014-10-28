@@ -1,0 +1,386 @@
+/*
+ *  libembryo
+ *  Copyright (C) 2010 by Jana Hlavacikova
+ *  Copyright (C) 2008 by Alexandre Devert
+ *
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *                  Version 2, December 2004
+ *
+ *  Copyright (C) 2004 Sam Hocevar
+ *  14 rue de Plaisance, 75014 Paris, France
+ *  Everyone is permitted to copy and distribute verbatim or modified
+ *  copies of this license document, and changing it is allowed as long
+ *  as the name is changed.
+ *
+ *            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ *
+ *  0. You just DO WHAT THE FUCK YOU WANT TO.
+ */
+
+#include <algorithm>
+#include <math.h>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <iomanip>
+#include <map>
+#include "embryo/Picture.hpp"
+#include "embryo/ArrayOps.hpp"
+#include "embryo/Exception.hpp"
+
+using namespace std;
+using namespace embryo;
+
+//TODO: destructor!!! delete pointers to aspectCells + erase
+
+Picture::Picture() : mWidth(0), mHeight(0), mName("") {
+}
+
+Picture::Picture(size_t inWidth, size_t inHeight) : mWidth(inWidth), mHeight(inHeight), mName("") {
+    mArray = new double[mWidth * mHeight];
+}
+
+Picture::Picture(const Picture& inPic) : mWidth(inPic.mWidth), mHeight(inPic.mHeight) {
+    
+
+    size_t lNbPixels = mWidth * mHeight;
+    mArray = new double[lNbPixels];
+    arrayd::copy(mArray, inPic.mArray, lNbPixels);
+
+    copy(inPic, inPic.mWidth, inPic.mHeight);
+}
+
+Picture::~Picture() {
+    AspectCellIterator aciBegin;
+    AspectCellIterator aciEnd;
+    getAspectCells(aciBegin, aciEnd);
+
+    while (aciBegin != aciEnd) {
+        delete (*aciBegin);
+        aciBegin = mAspectCells.erase(aciBegin);
+    }
+
+    if (mArray != 0)
+        delete[] mArray;
+
+    //mAspectCells.clear();
+}
+
+Picture&
+Picture::operator =(const Picture& inPic) {
+    //   size_t lNbPixels = mWidth * mHeight;
+    //   size_t lInNbPixels = inPic.mWidth * inPic.mHeight;
+    //
+    //   if (lNbPixels != lInNbPixels) {
+    //     if (mArray != 0)
+    //       delete[] mArray;
+    //     mArray = new double[lInNbPixels];
+    //   }
+
+    copy(inPic, inPic.mWidth, inPic.mHeight);
+    mWidth = inPic.mWidth;
+    mHeight = inPic.mHeight;
+
+    return *this;
+}
+
+void
+Picture::setup(size_t inWidth, size_t inHeight) {
+    mWidth = inWidth;
+    mHeight = inHeight;
+    mName = "";
+    mArray = new double[mWidth * mHeight];
+}
+
+void
+Picture::affineTransform(double inScale, double inBias) {
+    AspectCellIterator aciBegin;
+    AspectCellIterator aciEnd;
+    getAspectCells(aciBegin, aciEnd);
+
+    while (aciBegin != aciEnd) {
+        double lAspect = inScale * (*aciBegin)->getAspect() + inBias;
+        (*aciBegin)->setAspect(lAspect);
+        ++aciBegin;
+    }
+}
+
+void
+Picture::copy(const Picture& inPic, size_t inX, size_t inY) {
+
+    mHeight = inY;
+    mWidth = inX;
+
+
+    mAspectCells.clear();
+    //   AspectCellConstIterator aciBegin;
+    //   AspectCellConstIterator aciEnd;
+    //   inPic.getAspectCells(aciBegin, aciEnd);
+    //
+    //   while (aciBegin != aciEnd) {
+    //     delete (*aciBegin);
+    //     aciBegin = cc.erase(aciBegin);
+    //     ++aciBegin;
+    //   }
+
+
+    AspectCellConstIterator aciBegin;
+    AspectCellConstIterator aciEnd;
+    inPic.getAspectCells(aciBegin, aciEnd);
+
+    while (aciBegin != aciEnd) {
+        mAspectCells.push_back(*aciBegin);
+        ++aciBegin;
+    }
+}
+
+double Picture::colorPerPixel(const size_t inX, const size_t inY) const {
+    int pos = (int) (mHeight * inX + inY);
+    return mArray[pos];
+}
+
+double Picture::colour(const size_t inX, const size_t inY) const {
+    AspectCellConstIterator aciBegin = mAspectCells.begin();
+    AspectCellConstIterator aciEnd = mAspectCells.end();
+
+    while (aciBegin != aciEnd) {
+        if (((*aciBegin)->getPositionX() <= inX) && ((*aciBegin)->getPositionX() + (*aciBegin)->getSize() >= inX) && ((*aciBegin)->getPositionY() <= inY) && ((*aciBegin)->getPositionY() + (*aciBegin)->getSize() >= inY))
+            return (*aciBegin)->getAspect();
+        ++aciBegin;
+    }
+
+    return -1.0;
+}
+
+double
+embryo::distanceStructure(const Picture& inA, const Picture& inB) {
+    AspectCellConstIterator aciBegin;
+    AspectCellConstIterator aciEnd;
+    inA.getAspectCells(aciBegin, aciEnd);
+   
+    size_t lNbPixels = (inB.height() * inB.width());
+    double lPenalty = (double)(lNbPixels) / (double) (inA.cells());
+    double lSum = 0.0;
+    int x = 0;
+    int xOld = 0;
+    int y = 0;
+    while (aciBegin != aciEnd) {
+
+        const double* lPixels = inB.pixels();
+
+        //     std::cout << "aspect1: " << (*aciBegin)->getAspect() << std::endl;
+        //     std::cout << "aspect2: " << (*aciBegin2)->getAspect() << std::endl;
+
+        double lAspectCandidate = (*aciBegin)->getAspect();
+        x = (*aciBegin)->getPositionX();
+        y = (*aciBegin)->getPositionY();
+        int maxX = x + sqrt((*aciBegin)->getSize());
+        int maxY = y + sqrt((*aciBegin)->getSize());
+
+        int plus = 0;
+        int minus = 0;
+
+        int black = 0;
+        int white = 0;
+
+//        lPixels = lPixels + y * inB.width() + x;
+//        ++lPixels;
+
+        //map of color pixels [color, number]
+        //round a color pixel value, insert into map. after inserting all pixels of a cell, sort map; get the max number of same color pixels
+//        std::map<float, int> lSortedColorPixels;
+        //cout << fixed << setprecision(1) << 9.09090901 << endl;
+
+        xOld = x;
+        while (y < maxY) {
+            x = xOld;
+            while (x < maxX) {
+                //getColor
+                ios_base::fixed;
+////                ios_base::precision(2);
+                setprecision(1);
+                double lColor = lPixels[y * inB.width() + x];
+//
+                if (lColor + 0.05 < 0.1)  //  == 0
+                    black++;
+                else
+                    white++;
+
+
+//                double lDiff = lAspectCandidate - (lPixels[y * inB.width() + x]);
+//                if (lDiff < 0.00)
+//                    minus++;
+//                else
+//                    plus++;
+
+                //count max number of same color pixels.
+
+//                ++lPixels;
+                ++x;
+            }
+//            lPixels = lPixels - xOld + inB.width();
+            ++y;
+        }
+
+//        std::cout << "black: " << black  << " white: " << white << std::endl;
+//        double lFitness = (plus > minus) ? plus : minus;
+        double lFitness = (black > white) ? black : white;
+//        lFitness -= (double) ((*aciBegin)->getSize() / 2);
+//        lFitness += lPenalty;
+//        lFitness /= 2.00;
+
+//        std::cout << "fitness: " << lFitness << std::endl;
+
+        lSum += lFitness;
+
+        ++aciBegin;
+    }
+
+//    int lMaxLength = (inB.width() > (inB.height())) ? (inB.width()) : (inB.height());
+//    lSum /= (double) lMaxLength;
+
+    //std::cout << "distance: " << lSum / lNbPixels << std::endl;
+    setprecision(10);
+    lSum + lPenalty;
+//    return (1.00 / (lSum + 0.00000001));
+//    double lResult = ((double) inB.getAspectCellsSize() / (lSum + 0.00000001));
+    double lResult = (double) ((double) 1.00 / (lSum + 0.00000001));
+//    std::cout << "result fit: " << lResult << std::endl;
+    return lResult;
+}
+
+double
+embryo::distance(const Picture& inA, const Picture& inB) { //inA = mCandidate; inB = mTargetPic
+    //    int lNbPixels = inA.getAspectCellsSize();
+    //    int lNbPixels2 = inB.getAspectCellsSize();
+    //    int lSize = (lNbPixels < lNbPixels2) ? lNbPixels2 : lNbPixels;
+
+    //first is mCandidatePic; mCandidatePic_#cells <= mTargetPic_#cells
+    int lSize = inA.getAspectCellsSize();
+
+    AspectCellConstIterator aciBegin;
+    AspectCellConstIterator aciEnd;
+    inA.getAspectCells(aciBegin, aciEnd);
+
+    //    AspectCellConstIterator aciBegin2;
+    //    AspectCellConstIterator aciEnd2;
+    //    inB.getAspectCells(aciBegin2, aciEnd2);
+
+    const double* lPixels = inB.pixels();
+
+    double lSum = 0.0;
+
+    //    int i = 0;
+    int x = 0;
+    int xOld = 0;
+    int y = 0;
+    //    while (i < lSize) {
+    while (aciBegin != aciEnd) {
+
+        //     std::cout << "aspect1: " << (*aciBegin)->getAspect() << std::endl;
+        //     std::cout << "aspect2: " << (*aciBegin2)->getAspect() << std::endl;
+
+        double lAspectCandidate = (*aciBegin)->getAspect();
+        x = (*aciBegin)->getPositionX();
+        y = (*aciBegin)->getPositionY();
+        int maxX = (*aciBegin)->getPositionX() + sqrt((*aciBegin)->getSize());
+        int maxY = (*aciBegin)->getPositionY() + sqrt((*aciBegin)->getSize());
+
+        lPixels = lPixels + y * inB.width() + x;
+
+        xOld = x;
+        while (y < maxY) {
+            x = xOld;
+            while (x < maxX) {
+                //getColor
+
+                double lDiff = lAspectCandidate - *lPixels;
+                lSum += lDiff * lDiff;
+
+                ++lPixels;
+                ++x;
+            }
+            lPixels = lPixels - xOld + inB.width();
+            ++y;
+        }
+
+        //        while ((*aciBegin2)->getPositionX() < maxX) {
+        //            double lDiff = (*aciBegin)->getAspect() - (*aciBegin2)->getAspect();
+        //            lSum += lDiff * lDiff;
+        //            ++aciBegin2;
+        //        }
+
+        ++aciBegin;
+        //        ++i;
+    }
+
+    //std::cout << "distance: " << lSum / lNbPixels << std::endl;
+    return (lSum / (double) (inB.getAspectCellsSize())); //lNbPixels);
+}
+
+double
+embryo::distance(const double& inPixelA, const double& inPixelB) {
+    double lDiff = inPixelA - inPixelB;
+    return (lDiff * lDiff);
+}
+
+double
+embryo::maxDistance(const Picture& inPic) {
+    size_t lNbPixels = inPic.getAspectCellsSize();
+
+    AspectCellConstIterator aciBegin;
+    AspectCellConstIterator aciEnd;
+    inPic.getAspectCells(aciBegin, aciEnd);
+
+    double lSum = 0.0;
+    while (aciBegin != aciEnd) {
+        double lDiff = std::max((*aciBegin)->getAspect(), 1.0 - (*aciBegin)->getAspect());
+        lSum += lDiff * lDiff;
+        ++aciBegin;
+    }
+
+    return lSum / lNbPixels;
+}
+
+void Picture::init() {
+    for (int i = 0; i < mHeight; i++)
+        for (int j = 0; j < mWidth; j++)
+            mAspectCells.push_back(new AspectCell(i, j, 1, 0.0));
+}
+
+void Picture::init(int iSize, double iAspect) {
+    for (int i = 0; i < mHeight; i++)
+        for (int j = 0; j < mWidth; j++)
+            mAspectCells.push_back(new AspectCell(i * iSize, j * iSize, iSize, iAspect));
+}
+
+void Picture::eraseAspectCells() {
+    AspectCellIterator it = mAspectCells.begin();
+    AspectCellIterator ite = mAspectCells.end();
+    while (it != ite) {
+        delete (*it);
+        (*it) = NULL;
+        it = mAspectCells.erase(it);
+    }
+    mAspectCells.clear();
+}
+
+void Picture::setNextAspectCell(int iPositionX, int iPositionY, int iSize, double iAspect) {
+    mAspectCells.push_back(new AspectCell(iPositionX, iPositionY, iSize, iAspect));
+}
+
+void Picture::print() {
+    AspectCellIterator it = mAspectCells.begin();
+    AspectCellIterator ite = mAspectCells.end();
+    int c = 0;
+    while (it != ite) {
+        printf("%d> x: %d, y: %d, s: %d, a: %e \n", ++c, (*it)->getPositionX(), (*it)->getPositionY(), (*it)->getSize(), (*it)->getAspect());
+        ++it;
+    }
+}
+
+void Picture::getAspectCells(AspectCellIterator & aciBegin, AspectCellIterator & aciEnd) {
+    aciBegin = mAspectCells.begin();
+    aciEnd = mAspectCells.end();
+}

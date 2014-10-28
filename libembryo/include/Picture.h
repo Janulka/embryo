@@ -1,0 +1,176 @@
+/*
+ *  libembryo
+ *  Copyright (C) 2010 by Jana Hlavacikova, janahlava@gmail.com
+ *                  Version 3, April 2010
+ *
+ *  Copyright (C) 2008 by Alexandre Devert
+ *
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *                  Version 2, December 2004
+ *
+ *  Copyright (C) 2004 Sam Hocevar
+ *  14 rue de Plaisance, 75014 Paris, France
+ *  Everyone is permitted to copy and distribute verbatim or modified
+ *  copies of this license document, and changing it is allowed as long
+ *  as the name is changed.
+ *
+ *            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ *
+ *  0. You just DO WHAT THE FUCK YOU WANT TO.
+ */
+
+#ifndef EMBRYO_PICTURE_H
+#define EMBRYO_PICTURE_H
+
+#include <ArrayOps.h>
+#include <AspectCell.h>
+#include <list>
+
+using namespace std;
+
+namespace embryo {
+
+    /*
+     * Defines a picture as a 2d array of floating point values.
+     */
+
+    class Picture {
+    private:
+        size_t mWidth, mHeight;
+
+        std::string mName;
+        size_t mBorderValue;
+        AspectCellContainer mAspectCells;
+
+        //needed for target picture where cells stay 1x1 pixel
+        double* mArray;
+
+
+    public:
+        Picture();
+
+        Picture(size_t inWidth, size_t inHeight);
+
+        Picture(const Picture& inPic);
+        //    Picture(Picture& inPic);
+
+        virtual ~Picture();
+
+        Picture & operator =(const Picture& inPic);
+        //    Picture& operator = (Picture& inPic);
+
+        void setup(size_t inWidth, size_t inHeight);
+
+        inline void setName(std::string inName) {
+            mName = inName;
+        }
+
+        inline const std::string getName() const {
+            return mName;
+        }
+
+        inline void setBorder(size_t inBorder) {
+            mBorderValue = inBorder;
+        }
+
+        inline size_t getBorder(std::string inName) const {
+            if (inName == mName)
+                return mBorderValue;
+            else
+                return ((size_t) 0);
+        }
+
+        inline size_t width() const {
+            return mWidth;
+        }
+
+        inline size_t height() const {
+            return mHeight;
+        }
+
+        inline int cells() const {
+            return mAspectCells.size();
+        }
+
+        inline const double* pixels() const {
+            return mArray;
+        }
+
+        inline double* pixels() {
+            return mArray;
+        }
+
+        inline void setPixels(double *& iPixels) {
+            mArray = iPixels;
+        }
+
+        // Set all the pixels to a given value
+
+        inline void fill(double inValue) {
+            arrayd::fill(mArray, mWidth * mHeight, inValue);
+        }
+
+        // Copy a given picture at a given position
+        void copy(const Picture& inPic, size_t inX, size_t inY);
+
+        /*
+         * Apply the transform F to each pixels, where F is defined as
+         *   F(x) = inScale * x + inBias
+         */
+        void affineTransform(double inScale, double inBias);
+
+        virtual double colorPerPixel(const size_t inX, const size_t inY) const;
+
+        virtual double colour(const size_t inX, const size_t inY) const;
+
+        inline int getAspectCellsSize() const {
+            return mAspectCells.size();
+        }
+
+        void getAspectCells(AspectCellIterator & aciBegin, AspectCellIterator & aciEnd);
+
+        inline void getAspectCells(AspectCellConstIterator & aciBegin, AspectCellConstIterator & aciEnd) const {
+            aciBegin = mAspectCells.begin();
+            aciEnd = mAspectCells.end();
+        }
+
+        inline void getAspectCellsContainer(AspectCellContainer & oCells) {
+            oCells = mAspectCells;
+        }
+
+        inline AspectCellContainer getContainer() {
+            return mAspectCells;
+        }
+
+        void init();
+
+        void init(int iSize, double iAspect);
+
+        void eraseAspectCells();
+
+        void setNextAspectCell(int iPositionX, int iPositionY, int iSize, double iAspect);
+
+        void print();
+    }
+    ; // class Picture
+
+
+    // Return a (pretty lame) distance between pictures
+    double distance(const double& inPixelA, const double& inPixelB);
+
+    // return structural distance between pictures
+    double distanceStructure(const Picture& inA, const Picture& inB);
+
+    // Return a distance between pictures
+    double distance(const Picture& inA, const Picture& inB);
+    double distance2(const Picture& inA, const Picture& inB);  
+
+    // Return the highest possible distance to a given picture
+    double maxDistance(const Picture& inPic);
+
+} // namespace embryo
+
+
+
+#endif /* EMBRYO_PICTURE_H */

@@ -1,0 +1,20 @@
+#ifndef COLOUR_ASPECT_H
+#define COLOUR_ASPECT_H
+
+#include "EmbryoAspect.h"
+
+
+
+namespace embryo {
+  class ColourAspect : public EmbryoAspect {
+  public:
+    virtual ~ColourAspect();
+
+    virtual void set(const Embryo& inEmbryo, Picture& outPicture);
+  }
+  ; // class ColourAspect
+} // namespace embryo
+
+
+
+#endif /* COLOUR_ASPECT_H */

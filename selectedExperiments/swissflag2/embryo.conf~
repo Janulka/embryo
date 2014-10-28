@@ -1,0 +1,21 @@
+# --- Size of the embryo flag ---
+width = 32 height = 32
+
+# --- Number of internal states & chemicals ---
+nb.states = 1
+nb.chemicals = 2
+diffuse.chemicals = true
+target.pic = swissflagBW|
+
+# --- Cell controller ---
+controller(mlp.controller(nb.hidden.neurons = 8))
+
+# --- Stopping criterion ---
+nb.steps.max = 1024
+
+
+monitor(energy.monitor(window.size = 8))
+#monitor(fixed.monitor(max.nb.steps = 10))
+
+different.init.values = false
+gui.output = false

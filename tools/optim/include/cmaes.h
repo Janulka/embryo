@@ -1,0 +1,90 @@
+/* --------------------------------------------------------- */
+/* --- File: cmaes.h ----------- Author: Nikolaus Hansen --- */
+/* ---------------------- last modified: VIII 2007       --- */
+/* --------------------------------- by: Nikolaus Hansen --- */
+/* --------------------------------------------------------- */
+/*
+     CMA-ES for non-linear function minimization. 
+ 
+     Copyright (C) 1996, 2003-2007  Nikolaus Hansen. 
+     e-mail: hansen@bionik.tu-berlin.de
+      
+     License: see file cmaes.c
+   
+*/
+#ifndef NH_cmaes_h /* only include ones */
+#define NH_cmaes_h
+
+#include "random.h"
+#include "timings.h"
+#include "readpara.h"
+
+
+
+namespace cmaes {
+  typedef struct
+        /* cmaes_t
+         * CMA-ES "object" 
+     */ {
+    char *version;
+    readpara_t sp;
+    randomizer rand; /* random number generator */
+
+    double sigma;  /* step size */
+
+    double *rgxmean;  /* mean x vector, "parent" */
+    double *rgxbestever;
+    double **rgrgx;   /* range of x-vectors, lambda offspring */
+    int *index;       /* sorting index of sample pop. */
+    double *arFuncValueHist;
+
+    short flgIniphase; /* not really in use anymore */
+    short flgStop;
+
+    double chiN;
+    double **C;  /* lower triangular matrix: i>=j for C[i][j] */
+    double **B;  /* matrix with normalize eigenvectors in columns */
+    double *rgD; /* axis lengths */
+
+    double *rgpc;
+    double *rgps;
+    double *rgxold;
+    double *rgout;
+    double *rgBDz;   /* for B*D*z */
+    double *rgdTmp;  /* temporary (random) vector used in different places */
+    double *rgFuncValue;
+    double *publicFitness; /* returned by cmaes_init() */
+
+    double gen; /* Generation number */
+    double countevals;
+    double state; /* 1 == sampled, 2 == not in use anymore, 3 == updated */
+
+    double maxdiagC; /* repeatedly used for output */
+    double mindiagC;
+    double maxEW;
+    double minEW;
+
+    char sOutString[330]; /* 4x80 */
+
+    short flgEigensysIsUptodate;
+    short flgCheckEigen; /* control via signals.par */
+    double genOfEigensysUpdate;
+    timings eigenTimings;
+
+    double dMaxSignifKond;
+    double dLastMinEWgroesserNull;
+
+    short flgresumedone;
+
+    time_t printtime;
+    time_t writetime; /* ideally should keep track for each output file */
+    time_t firstwritetime;
+    time_t firstprinttime;
+
+  }
+  cmaes_t;
+} // namespace cmaes
+
+
+
+#endif

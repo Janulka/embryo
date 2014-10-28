@@ -1,0 +1,44 @@
+# embryo config info: 
+# lWidth 32
+# lHeight 32
+# lNbStates 1
+# lNbChemicals 2
+# lDiffuseChemicals 1
+# lPathTargetPic name swissflagBW|
+# lPath ./
+# lbDifferentStatesInitialization 0
+# oGuiOuput 0
+# 1-th pic to read: swissflagBW
+# nb steps max: 512
+ # (50,100)-CMA-ES(mu_eff=27.2), Ver="3.02.01.beta", dimension=115, randomSeed=-866378680 (Thu Jul 22 21:18:22 2010)
+# Population size: 100
+# generation	best fitness 
+ best gen: 0 | best fit: 0.156892 | best index: 99
+1	0.156892
+ best gen: 1 | best fit: 0.156892 | best index: 99
+2	0.156892
+ best gen: 2 | best fit: 0.156892 | best index: 99
+3	0.156892
+ best gen: 3 | best fit: 0.156892 | best index: 97
+4	0.156892
+ best gen: 4 | best fit: 0.142813 | best index: 18
+5	0.142813
+6	0.155584
+7	0.156892
+ best gen: 7 | best fit: 0.134665 | best index: 69
+8	0.134665
+9	0.156892
+ best gen: 9 | best fit: 0.128889 | best index: 50
+10	0.128889
+====0.12883
+%% color optimization 
+1	0.187784
+2	0.169468
+3	0.161285
+4	0.160714
+5	0.160646
+6	0.160237
+7	0.160208
+8	0.159661
+9	0.159616
+10	0.159813

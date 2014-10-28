@@ -1,0 +1,470 @@
+/*
+ *  libembryo
+ *  Copyright (C) 2008 by Alexandre Devert
+ *
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *                  Version 2, December 2004
+ *
+ *  Copyright (C) 2004 Sam Hocevar
+ *  14 rue de Plaisance, 75014 Paris, France
+ *  Everyone is permitted to copy and distribute verbatim or modified
+ *  copies of this license document, and changing it is allowed as long
+ *  as the name is changed.
+ *
+ *            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ *
+ *  0. You just DO WHAT THE FUCK YOU WANT TO.
+ */
+
+#include <algorithm>
+#include "embryo/Embryo.hpp"
+#include "embryo/MapTreeParser.hpp"
+#include "embryo/ObjectFactoryDealer.hpp"
+#include "embryo/ArrayOps.hpp"
+#include "embryo/Exception.hpp"
+#include "embryo/MLPController.hpp"
+#include "embryo/ESNController.hpp"
+#include "embryo/FixedMonitor.hpp"
+#include "embryo/EnergyMonitor.hpp"
+#include "embryo/GaussianDistribution.hpp"
+
+using namespace std;
+using namespace embryo;
+
+
+
+namespace embryo {
+  struct FireOnInit {
+    const Embryo& mEmbryo;
+
+    FireOnInit(const Embryo& inEmbryo) : mEmbryo(inEmbryo) { }
+
+    inline void operator () (EmbryoListener* inListener) {
+      inListener->onInit(mEmbryo);
+    }
+  }
+  ; // struct FireOnInit
+
+
+
+  struct FireOnUpdate {
+    const Embryo& mEmbryo;
+
+    FireOnUpdate(const Embryo& inEmbryo) : mEmbryo(inEmbryo) { }
+
+    inline void operator () (EmbryoListener* inListener) {
+      inListener->onUpdate(mEmbryo);
+    }
+  }
+  ; // struct FireOnUpdate
+} // namespace embryo
+
+
+
+
+// --- Embryo -----------------------------------------------------------------
+
+Embryo::Embryo(size_t inWidth, size_t inHeight,
+               size_t inNbStates,
+               size_t inNbChemicals,
+               HandleT<Monitor> inMonitor,
+               HandleT<Controller> inController,
+               bool inDiffuseChemicals) : mDiffuseChemicals(inDiffuseChemicals), mWidth(inWidth), mHeight(inHeight), mNbStates(inNbStates), mNbChemicals(inNbChemicals), mMonitor(inMonitor), mController(inController) {
+  setup();
+  mController->init(mNbStates, mNbChemicals);
+}
+
+
+
+
+
+void
+Embryo::setup() {
+  mNbCells = mWidth * mHeight;
+  mNbChemicalsPerRow = mWidth * mNbChemicals;
+  mNbStepsMax = mNbCells;
+
+  // Allocate memory for the states and the chemicals
+  size_t lVectorSize = mNbCells * (mNbStates + mNbChemicals);
+  mVectorsMem = new double[2 * lVectorSize];
+
+  mStateVector = mVectorsMem;
+  mPrevStateVector = mStateVector + mNbCells * mNbStates;
+  mChemicalVector = mPrevStateVector + mNbCells * mNbStates;
+  mPrevChemicalVector = mChemicalVector + mNbCells * mNbChemicals;
+}
+
+
+
+Embryo::~Embryo() {
+  delete[] mVectorsMem;
+}
+
+
+
+void
+Embryo::addListener(EmbryoListener* inListener) {
+  if (find(mListeners.begin(), mListeners.end(), inListener) != mListeners.end())
+    throw Exception("Same EmbryoListener added twice");
+
+  mListeners.push_back(inListener);
+}
+
+
+
+void
+Embryo::removeListener(EmbryoListener* inListener) {
+  vector<EmbryoListener*>::iterator it =
+    find(mListeners.begin(), mListeners.end(), inListener);
+
+  if (it == mListeners.end())
+    throw Exception("Try to remove an EmbryoListener no previously added");
+
+  mListeners.erase(it);
+}
+
+
+
+void
+Embryo::init() {
+  arrayd::zero(mStateVector, mNbCells * mNbStates);
+  arrayd::zero(mChemicalVector, mNbCells * mNbChemicals);
+
+  // Initialize the monitor
+  mMonitor->init(*this);
+
+  // Listeners
+  for_each(mListeners.begin(), mListeners.end(), FireOnInit(*this));
+}
+
+
+
+void
+Embryo::reshape(size_t inWidth, size_t inHeight) {
+  // Nothing to do case
+  if ((inWidth == mWidth) && (inHeight == mHeight))
+    return;
+
+  // Free the memory
+  delete[] mVectorsMem;
+
+  // Redo a setup
+  mWidth = inWidth;
+  mHeight = inHeight;
+  setup();
+}
+
+
+
+void
+Embryo::scramble(Randomizer& inRandomizer, double inStdDev) {
+  GaussianDistribution lDistrib;
+
+  // Chemicals scramble
+  {
+    double* lOffset = mChemicalVector;
+    for(size_t i = mNbCells * mNbChemicals; i != 0; --i, ++lOffset)
+      (*lOffset) += lDistrib(inRandomizer, inStdDev);
+  }
+
+  // States scramble
+  {
+    double* lOffset = mStateVector;
+    for(size_t i = mNbCells * mNbStates; i != 0; --i, ++lOffset)
+      (*lOffset) += lDistrib(inRandomizer, inStdDev);
+  }
+}
+
+
+
+double
+Embryo::energy() const {
+  double lSquareSum = 0.0;
+
+  // Chemicals sum
+  {
+    const double* lOffset = mChemicalVector;
+    for(size_t i = mNbCells * mNbChemicals; i != 0; --i, ++lOffset)
+      lSquareSum += (*lOffset) * (*lOffset);
+  }
+
+  // States sums
+  {
+    const double* lOffset = mStateVector;
+    for(size_t i = mNbCells * mNbStates; i != 0; --i, ++lOffset)
+      lSquareSum += (*lOffset) * (*lOffset);
+  }
+
+  // Job done
+  return lSquareSum;
+}
+
+
+
+void
+Embryo::getColours(Picture& inPicture) const {
+  double* lDst = inPicture.pixels();
+  const double* lSrcStates = mStateVector;
+  const double* lSrcChems = mChemicalVector;
+
+  for(size_t i = mHeight; i != 0; --i)
+    for(size_t j = mWidth; j != 0; --j, lDst++, lSrcStates += mNbStates, lSrcChems += mNbChemicals)
+      (*lDst) = mController->colour(lSrcStates, lSrcChems);
+}
+
+
+
+void
+Embryo::getChemicals(Picture& inPicture, size_t inIndex) const {
+  if (inIndex >= mNbChemicals)
+    throw Exception("Invalid chemical index");
+
+  double* lDst = inPicture.pixels();
+  const double* lSrc = mChemicalVector + inIndex;
+
+  for(size_t i = mHeight; i != 0; --i)
+    for(size_t j = mWidth; j != 0; --j, lDst++, lSrc += mNbChemicals)
+      (*lDst) = (*lSrc);
+}
+
+
+
+void
+Embryo::getStates(Picture& inPicture, size_t inIndex) const {
+  if (inIndex >= mNbStates)
+    throw Exception("Invalid state index");
+
+  double* lDst = inPicture.pixels();
+  const double* lSrc = mStateVector + inIndex;
+
+  for(size_t i = mHeight; i != 0; --i)
+    for(size_t j = mWidth; j != 0; --j, lDst++, lSrc += mNbStates)
+      (*lDst) = (*lSrc);
+}
+
+
+
+void
+Embryo::diffuseChemicals() {
+  double *lSrc, *lDst;
+
+  /*
+   * Gaussian blur order 2, two passes algorithm
+   */
+
+  // First pass (horizontal)
+  lSrc = mChemicalVector;
+  lDst = mPrevChemicalVector;
+
+  for(size_t i = mHeight; i != 0; --i) {
+    {
+      double* lRight  = lSrc + mNbChemicals;
+      double* lCenter = lSrc;
+      for(size_t k = 0; k < mNbChemicals; ++k)
+        lDst[k] = (2.0 * lCenter[k] + lRight[k]) / 4.0;
+    }
+
+    lSrc += mNbChemicals;
+    lDst += mNbChemicals;
+
+    for(size_t j = mWidth - 2; j != 0; --j, lSrc += mNbChemicals, lDst += mNbChemicals) {
+      double* lLeft   = lSrc - mNbChemicals;
+      double* lCenter = lSrc;
+      double* lRight  = lSrc + mNbChemicals;
+      for(size_t k = 0; k < mNbChemicals; ++k)
+        lDst[k] = (lLeft[k] + 2.0 * lCenter[k] + lRight[k]) / 4.0;
+    }
+
+    {
+      double* lCenter = lSrc;
+      double* lLeft   = lSrc - mNbChemicals;
+      for(size_t k = 0; k < mNbChemicals; ++k)
+        lDst[k] = (lLeft[k] + 2.0 * lCenter[k]) / 4.0;
+    }
+
+    lSrc += mNbChemicals;
+    lDst += mNbChemicals;
+  }
+
+  // Second pass (vertical)
+  lSrc = mPrevChemicalVector;
+  lDst = mChemicalVector;
+
+  for(size_t i = mWidth; i != 0; --i, lSrc += mNbChemicals, lDst += mNbChemicals) {
+    double* lCenter = lSrc;
+    double* lDown   = lSrc + mNbChemicalsPerRow;
+    for(size_t k = 0; k < mNbChemicals; ++k)
+      lDst[k] = (2.0 * lCenter[k] + lDown[k]) / 4.0;
+  }
+
+  for(size_t i = mHeight - 2; i != 0; --i) {
+    for(size_t j = mWidth; j != 0; --j, lSrc += mNbChemicals, lDst += mNbChemicals) {
+      double* lUp     = lSrc - mNbChemicalsPerRow;
+      double* lCenter = lSrc;
+      double* lDown   = lSrc + mNbChemicalsPerRow;
+      for(size_t k = 0; k < mNbChemicals; ++k)
+        lDst[k] = (lUp[k] + 2.0 * lCenter[k] + lDown[k]) / 4.0;
+    }
+  }
+
+  for(size_t i = mWidth; i != 0; --i, lSrc += mNbChemicals, lDst += mNbChemicals) {
+    double* lUp     = lSrc - mNbChemicalsPerRow;
+    double* lCenter = lSrc;
+    for(size_t k = 0; k < mNbChemicals; ++k)
+      lDst[k] = (lUp[k] + 2.0 * lCenter[k]) / 4.0;
+  }
+}
+
+
+
+bool
+Embryo::update() {
+  // Diffusion of the chemicals
+  if (mDiffuseChemicals)
+    diffuseChemicals();
+
+  // Switch states
+  std::swap(mPrevStateVector, mStateVector);
+  std::swap(mPrevChemicalVector, mChemicalVector);
+
+  // Update the states and chemicals cell by cell
+  double* lOldState = mPrevStateVector;
+  double* lNewState = mStateVector;
+  double* lOldChemicals = mPrevChemicalVector;
+  double* lNewChemicals = mChemicalVector;
+
+  double* lOldChemicalsList[5];
+
+  for(size_t i = 0; i < mHeight; ++i) {
+    // Generate the NORTH inputs
+    if (i == 0)
+      lOldChemicalsList[0] = 0;
+    else
+      lOldChemicalsList[0] = lOldChemicals - mNbChemicalsPerRow;
+
+    // Generate the SOUTH inputs
+    if (i == mHeight - 1)
+      lOldChemicalsList[1] = 0;
+    else
+      lOldChemicalsList[1] = lOldChemicals + mNbChemicalsPerRow;
+
+    for(size_t j = 0; j < mWidth; ++j,
+            lOldChemicals += mNbChemicals,
+            lNewChemicals += mNbChemicals,
+            lOldState += mNbStates,
+            lNewState += mNbStates) {
+      // Generate the WEST inputs
+      if (j == 0)
+        lOldChemicalsList[2] = 0;
+      else
+        lOldChemicalsList[2] =  lOldChemicals - mNbChemicals;
+
+      // Generate the EAST inputs
+      if (j == mWidth - 1)
+        lOldChemicalsList[3] = 0;
+      else
+        lOldChemicalsList[3] = lOldChemicals + mNbChemicals;
+
+      // Generate the CENTER inputs
+      lOldChemicalsList[4] = lOldChemicals;
+
+      // Update the current cell state
+      mController->update(lOldState, lOldChemicalsList,
+                          lNewState, lNewChemicals);
+    }
+  }
+
+  // Ask the monitor if should stop
+  mMonitor->next(*this);
+
+  // Listeners
+  for_each(mListeners.begin(), mListeners.end(), FireOnUpdate(*this));
+
+  // Job done
+  return mMonitor->hasNext();
+}
+
+
+
+Embryo::Handle
+Embryo::load(istream& inStream, uint32_t inSeed) {
+  // Read the input stream
+  MapTreeParser lParser(inStream);
+  HandleT<MapTree> lRoot = lParser.parse();
+  
+  // Retrieve the embryo
+  ObjectFactoryDealer lDealer(inSeed);
+  EmbryoFactory lFactory(lDealer);
+
+  Embryo::Handle lEmbryo =
+    dynamic_pointer_cast<Embryo, Object>(lFactory.produce(lRoot));
+
+  // job done
+  return lEmbryo;
+}
+
+
+
+// --- EmbryoFactory ----------------------------------------------------------
+
+EmbryoFactory::EmbryoFactory(const ObjectFactoryDealer& inDealer) : ObjectFactory("embryo", inDealer) { }
+
+
+
+EmbryoFactory::~EmbryoFactory() { }
+
+
+
+Object::Handle
+EmbryoFactory::produce(MapTree::Handle inMapTree) const {
+  // Retrieve the controller instance
+  Controller::Handle lController;
+  {
+    pair<std::string, MapTree::Handle> lNode =
+      inMapTree->getChild("controller")->getChild();
+    lController = dealer().deserializeT<Controller>(lNode.first, lNode.second);
+  }
+
+  // Retrieve the monitor instance
+  Monitor::Handle lMonitor;
+  {
+    pair<std::string, MapTree::Handle> lNode =
+      inMapTree->getChild("monitor")->getChild();
+    lMonitor = dealer().deserializeT<Monitor>(lNode.first, lNode.second);
+  }
+
+  // Retrieve the embryo constructor parameters
+  bool lDiffuseChemicals;
+  size_t lWidth, lHeight, lNbStates, lNbChemicals;
+<<<<<<< .mine
+  //lRoot->get("width", lWidth);
+  //lRoot->get("height", lHeight);
+  lRoot->get("nb.states", lNbStates);
+  lRoot->get("nb.chemicals", lNbChemicals);
+  lRoot->get("diffuse.chemicals", lDiffuseChemicals);
+=======
+  inMapTree->get("width", lWidth);
+  inMapTree->get("height", lHeight);
+  inMapTree->get("nb.states", lNbStates);
+  inMapTree->get("nb.chemicals", lNbChemicals);
+  inMapTree->get("diffuse.chemicals", lDiffuseChemicals);
+>>>>>>> .r1152
+
+  // Build the embryo
+  Embryo* lResult =
+    new Embryo(32,32,//lWidth, lHeight,
+               lNbStates, lNbChemicals,
+               lMonitor,
+               lController,
+               lDiffuseChemicals);
+
+  if (inMapTree->hasKey("nb.steps.max")) {
+    size_t lNbStepsMax;
+    inMapTree->get("nb.steps.max", lNbStepsMax);
+    lResult->nbStepsMax() = lNbStepsMax;
+  }
+
+  // Job done
+  return lResult;
+}

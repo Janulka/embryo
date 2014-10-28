@@ -1,0 +1,393 @@
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <argp.h>
+
+#include "Widget.hpp"
+#include "WidgetContainer.hpp"
+#include "EmbryoView.hpp"
+#include "ChemicalAspect.hpp"
+#include "ColourAspect.hpp"
+#include "StateAspect.hpp"
+
+using namespace std;
+using namespace embryo;
+
+
+
+int gWidth = 512;
+int gHeight = 512;
+int gVideoFlags = SDL_SWSURFACE | SDL_RESIZABLE;
+
+
+
+class CmdLineConf {
+  size_t mWidth, mHeight;
+  std::string mEmbryoFileName;
+  std::string mParamFileName;
+
+public:
+  CmdLineConf() : mWidth(0), mHeight(0) { }
+
+  inline const size_t width() const {
+    return mWidth;
+  }
+
+  inline size_t& width() {
+    return mWidth;
+  }
+
+  inline const size_t height() const {
+    return mWidth;
+  }
+
+  inline size_t& height() {
+    return mHeight;
+  }
+
+  inline const std::string& embryoFileName() const {
+    return mEmbryoFileName;
+  }
+
+  inline std::string& embryoFileName() {
+    return mEmbryoFileName;
+  }
+
+  inline const std::string& paramFileName() const {
+    return mParamFileName;
+  }
+
+  inline std::string& paramFileName() {
+    return mParamFileName;
+  }
+}
+; // struct CmdLineConf
+
+
+
+const char* argp_program_version = "embryo-view";
+
+const char *argp_program_bug_address = "<devert@lri.fr>";
+
+static char doc[] = "embryo-view -- Viewer for embryogenic flags";
+
+static struct argp_option options[]
+  = {
+    {
+      "embryo", 'e', "EMBRYO", 0,
+      "Embryo configuration file"
+    },
+    {
+      "parameters", 'p', "PARAMETERS", 0,
+      "Parameters file"
+    },
+    {
+      "width", 'w', "WIDTH", 0,
+      "Width of the embryo (override the one from the embryo configuration files)"
+    },
+    {
+      "height", 'h', "HEIGHT", 0,
+      "Height of the embryo (override the one from the embryo configuration files)"
+    },
+    {
+      0
+    }
+  };
+
+
+
+
+template <typename T>
+static T
+str2(const char* inStr) {
+  T lValue;
+  istringstream lBuffer(inStr);
+  lBuffer >> lValue;
+  return lValue;
+}
+
+
+
+static error_t
+parseCmdLineOptions(int key, char* arg, struct argp_state* state) {
+  CmdLineConf* lCmdLineConf = (CmdLineConf*)state->input;
+
+  switch(key) {
+  case 'e':
+    lCmdLineConf->embryoFileName() = arg;
+    break;
+
+  case 'p':
+    lCmdLineConf->paramFileName() = arg;
+    break;
+
+  case 'w':
+    lCmdLineConf->width() = str2<size_t>(arg);
+    break;
+
+  case 'h':
+    lCmdLineConf->height() = str2<size_t>(arg);
+    break;
+
+  case ARGP_KEY_ARG:
+    break;
+
+  case ARGP_KEY_END:
+    break;
+
+  default:
+    return ARGP_ERR_UNKNOWN;
+  }
+
+  return 0;
+}
+
+
+
+static struct argp argp
+  = {
+    options, parseCmdLineOptions, 0, doc
+  };
+
+
+
+void
+safeOpen(ifstream& inFile, const std::string& inFileName) {
+  inFile.open(inFileName.c_str());
+  if (!inFile.good()) {
+    cerr
+    << "Unable to open '"
+    << inFileName
+    << "'"
+    << endl;
+    exit(EXIT_FAILURE);
+  }
+}
+
+
+
+void
+savePicture(const Picture& inPic) {
+  try {
+    ofstream lFile("embryo.pgm");
+    savePGM(lFile, inPic);
+  } catch(Exception& inException) {
+    cerr
+    << "Error while writing 'embryo.pgm' :\n"
+    << inException.getMessage()
+    << endl;
+    exit(EXIT_FAILURE);
+  }
+}
+
+
+
+std::string
+buildWindowTitle(size_t inNbEpochs, bool inRunMode) {
+  ostringstream lBuffer;
+
+  lBuffer << argp_program_version << " | ";
+
+  lBuffer << inNbEpochs << " epochs";
+
+  if (!inRunMode)
+    lBuffer << " (pause)";
+  
+  return lBuffer.str();
+}
+
+
+
+int
+main(int argc, char* argv[]) {
+  // Parse the command line
+  CmdLineConf lCmdLineConf;
+  argp_parse(&argp, argc, argv, 0, 0, &lCmdLineConf);
+
+  // Checks if some files are missing
+  if (lCmdLineConf.embryoFileName().empty()) {
+    cerr << "No embryo file specified" << endl;
+    return EXIT_FAILURE;
+  }
+
+  // Load the embryo
+  Embryo::Handle lEmbryo;
+  try {
+    ifstream lFile;
+    safeOpen(lFile, lCmdLineConf.embryoFileName());
+    lEmbryo = Embryo::load(lFile, 0);
+  } catch(embryo::Exception& inException) {
+    cerr
+    << "Error while loading '"
+    << lCmdLineConf.embryoFileName()
+    << "' :\n  "
+    << inException.getMessage()
+    << endl;
+    return EXIT_FAILURE;
+  }
+
+  // Reshape the embryo if asked for it
+  size_t lDesiredWidth = lEmbryo->width();
+  size_t lDesiredHeight = lEmbryo->height();
+
+  if (lCmdLineConf.width() != 0)
+    lDesiredWidth = lCmdLineConf.width();
+
+  if (lCmdLineConf.height() != 0)
+    lDesiredHeight = lCmdLineConf.height();
+
+  lEmbryo->reshape(lDesiredWidth, lDesiredHeight);
+
+  // Load the model parameters
+  try {
+    ifstream lFile;
+    safeOpen(lFile, lCmdLineConf.paramFileName());
+    arrayd::load(lFile, lEmbryo->controller().parameters(), lEmbryo->controller().nbParameters());
+  } catch(embryo::Exception& inException) {
+    cerr
+    << "Error while loading '"
+    << lCmdLineConf.paramFileName()
+    << "' :\n"
+    << inException.getMessage()
+    << endl;
+    return EXIT_FAILURE;
+  }
+
+  // Setup a randomizer
+  Randomizer lRandomizer;
+  lRandomizer.init(1981);
+
+  // Setup the user interface
+  WidgetContainer lWidgetContainer;
+  lWidgetContainer.push();
+  lWidgetContainer.push();
+  for(size_t i = 0; i < lEmbryo->nbChemicals(); ++i)
+    lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new ChemicalAspect(i)));
+  lWidgetContainer.pop();
+  lWidgetContainer.push();
+  for(size_t i = 0; i <lEmbryo->nbStates(); ++i)
+    lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new StateAspect(i)));
+  lWidgetContainer.pop();
+  lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new ColourAspect()));
+  lWidgetContainer.pop();
+  lWidgetContainer.addWidget(new EmbryoView(*lEmbryo, new ColourAspect()));
+
+  // SDL initialization
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
+    cerr << "Unable to init SDL: " << SDL_GetError();
+    exit(EXIT_FAILURE);
+  }
+
+  SDL_Surface* lScreen =
+    SDL_SetVideoMode(gWidth, gHeight, 32, gVideoFlags);
+
+  if (!lScreen) {
+    cerr
+    <<  "Unable to set " << gWidth << 'x' << gHeight
+    <<  " video : " << SDL_GetError()
+    << endl;
+    return EXIT_FAILURE;
+  }
+
+
+  // Main event loop
+  bool lRunMode = false;
+  bool lScrambleMode = false;
+  bool lPaintRequested = true;
+  size_t lNbUpdates = 0;
+
+  SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, lRunMode).c_str(), "ICON");
+
+  lEmbryo->init();
+  Picture lPic(lEmbryo->width(), lEmbryo->height());
+
+  for(bool lMustQuit = false; !lMustQuit ; ) {
+    SDL_Event lEvent;
+    while(SDL_PollEvent(&lEvent)) {
+      switch(lEvent.type) {
+      case SDL_KEYDOWN:
+        switch(lEvent.key.keysym.sym) {
+        case SDLK_ESCAPE:
+          lMustQuit = true;
+          break;
+
+        case SDLK_RIGHT:
+        if (!lRunMode) {
+            lEmbryo->update();
+            lNbUpdates += 1;
+            lPaintRequested = true;
+            SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, lRunMode).c_str(), "ICON");
+          }
+          break;
+
+        case SDLK_PRINT:
+          lEmbryo->getColours(lPic);
+          savePicture(lPic);
+          break;
+
+        case SDLK_SPACE:
+          lRunMode = !lRunMode;
+          SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, lRunMode).c_str(), "ICON");
+          break;
+
+        case SDLK_n:
+          lScrambleMode = true;
+          break;
+
+        default:
+          break;
+        }
+        break;
+
+      case SDL_KEYUP:
+        switch(lEvent.key.keysym.sym) {
+        case SDLK_n:
+          lScrambleMode = false;
+          break;
+
+        default:
+          break;
+        }
+        break;
+
+      case SDL_VIDEORESIZE:
+        lScreen =
+          SDL_SetVideoMode(lEvent.resize.w, lEvent.resize.h, 32, gVideoFlags);
+        lPaintRequested = true;
+        break;
+
+      case SDL_QUIT:
+        lMustQuit = true;
+        break;
+
+      default:
+        break;
+      }
+    }
+
+    if (lScrambleMode) {
+      lEmbryo->scramble(lRandomizer, 1.0);
+      lPaintRequested = true;
+    }
+
+    if (lRunMode) {
+      lEmbryo->update();
+      lNbUpdates += 1;
+      lPaintRequested = true;
+      SDL_WM_SetCaption(buildWindowTitle(lNbUpdates, lRunMode).c_str(), "ICON");
+    }
+
+    if (lPaintRequested) {
+      lWidgetContainer.paint(lScreen);
+      SDL_Flip(lScreen);
+      lPaintRequested = false;
+    }
+
+    SDL_Delay(10);
+  }
+
+  // Job done
+  SDL_Quit();
+  return EXIT_SUCCESS;
+}

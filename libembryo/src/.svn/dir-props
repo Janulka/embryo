@@ -1,0 +1,9 @@
+K 10
+svn:ignore
+V 51
+.directory
+CVS
+.#Embryo.cpp.1.12
+.#Picture.cpp.1.6
+
+END

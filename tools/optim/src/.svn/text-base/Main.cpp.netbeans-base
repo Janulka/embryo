@@ -1,0 +1,287 @@
+#include <argp.h>
+#include <sstream>
+#include <fstream>
+#include <iostream>
+#include <embryo.hpp>
+#include <embryo/ArrayOps.hpp>
+#include "cmaes_interface.hpp"
+
+using namespace std;
+using namespace cmaes;
+using namespace embryo;
+
+
+
+class CmdLineConf {
+  long mRandomSeed;
+  std::string mConfigFileName;
+  std::string mTargetFileName;
+  std::string mPropertiesFileName;
+
+public:
+  CmdLineConf() {
+    mRandomSeed = 0;
+  }
+
+  inline const std::string& targetFileName() const {
+    return mTargetFileName;
+  }
+
+  inline std::string& targetFileName() {
+    return mTargetFileName;
+  }
+
+  inline const std::string& configFileName() const {
+    return mConfigFileName;
+  }
+
+  inline std::string& configFileName() {
+    return mConfigFileName;
+  }
+
+  inline const std::string& propertiesFileName() const {
+    return mPropertiesFileName;
+  }
+
+  inline std::string& propertiesFileName() {
+    return mPropertiesFileName;
+  }
+
+  inline long seed() const {
+    return mRandomSeed;
+  }
+
+  inline long& seed() {
+    return mRandomSeed;
+  }
+}
+; // struct CmdLineConf
+
+
+
+const char* argp_program_version = "embryo-optim";
+
+const char *argp_program_bug_address = "<devert@lri.fr>";
+
+static char doc[] = "embryo-optim -- CMAES optimizer for embryogenic flags";
+
+static struct argp_option options[]
+  = {
+    {
+      "seed", 's', "SEED", 0,
+      "Random seed value"
+    },
+    {
+      "properties", 'p', "PROPERTIES", 0,
+      "Properties file"
+    },
+    {
+      "target", 't', "TARGET", 0,
+      "Target picture (as a PGM file)"
+    },
+    {
+      "config", 'c', "CONFIG", 0,
+      "CMAES configuration file"
+    },
+    {
+      0
+    }
+  };
+
+
+
+static error_t
+parseCmdLineOptions(int key, char* arg, struct argp_state* state) {
+  CmdLineConf* lCmdLineConf = (CmdLineConf*)state->input;
+
+  switch(key) {
+  case 'c':
+    lCmdLineConf->configFileName() = arg;
+    break;
+
+  case 't':
+    lCmdLineConf->targetFileName() = arg;
+    break;
+
+  case 'p':
+    lCmdLineConf->propertiesFileName() = arg;
+    break;
+
+  case 's': {
+      long lValue;
+      istringstream lBuffer(arg);
+      lBuffer >> lValue;
+      lCmdLineConf->seed() = lValue;
+    }
+    break;
+
+  case ARGP_KEY_ARG:
+    break;
+
+  case ARGP_KEY_END:
+    break;
+
+  default:
+    return ARGP_ERR_UNKNOWN;
+  }
+
+  return 0;
+}
+
+
+
+static struct argp argp
+  = {
+    options, parseCmdLineOptions, 0, doc
+  };
+
+
+
+void
+safeOpen(ifstream& inFile, const std::string& inFileName) {
+  inFile.open(inFileName.c_str());
+  if (!inFile.good()) {
+    cerr
+    << "Unable to open '"
+    << inFileName
+    << "'"
+    << endl;
+    exit(EXIT_FAILURE);
+  }
+}
+
+
+
+int
+main(int argc, char* argv[]) {
+  // Parse the command line
+  CmdLineConf lCmdLineConf;
+  argp_parse(&argp, argc, argv, 0, 0, &lCmdLineConf);
+
+  // Checks if some files are missing
+  if (lCmdLineConf.propertiesFileName().empty()) {
+    cerr << "No properties file specified" << endl;
+    return EXIT_FAILURE;
+  }
+
+  if (lCmdLineConf.targetFileName().empty()) {
+    cerr << "No target picture file specified" << endl;
+    return EXIT_FAILURE;
+  }
+
+  // Load the properties
+  HandleT<Embryo> lEmbryo;
+  try {
+    ifstream lFile;
+    safeOpen(lFile, lCmdLineConf.propertiesFileName());
+    lEmbryo = Embryo::load(lFile, lCmdLineConf.seed());
+  } catch(embryo::Exception& inException) {
+    cerr
+    << "Error while loading '"
+    << lCmdLineConf.propertiesFileName()
+    << "' :\n  "
+    << inException.getMessage()
+    << endl;
+    return EXIT_FAILURE;
+  }
+
+  // Load the target picture
+  Picture lTargetPic;
+  try {
+    ifstream lFile;
+    safeOpen(lFile, lCmdLineConf.targetFileName());
+    lTargetPic = loadPGM(lFile);
+  } catch(embryo::Exception& inException) {
+    cerr
+    << "Error while loading '"
+    << lCmdLineConf.targetFileName()
+    << "' :\n  "
+    << inException.getMessage()
+    << endl;
+    return EXIT_FAILURE;
+  }
+
+  // Setup an evaluator
+  Evaluator lEvaluator(lTargetPic, lEmbryo);
+
+  /*
+   * Run CMAES (seal your belt and close your eyes)
+   */
+
+  // Init the CMAES state
+  cmaes_t lCmaesState;
+  double* lFitnessValues =
+    cmaes_init(&lCmaesState,
+               lEmbryo->controller().nbParameters(),
+               NULL,
+               NULL,
+               lCmdLineConf.seed(),
+               0,
+               lCmdLineConf.configFileName().c_str());
+
+  // Dump useful infos
+  cout << "# " << cmaes_SayHello(&lCmaesState) << endl;
+
+  // CMAES iterations
+  size_t lPopSize = (size_t)cmaes_Get(&lCmaesState, "popsize");
+
+  vector<double> lSimilarities(lPopSize);
+  bool lFirstGeneration = true;
+  double lBestEverSimilarity = 0.0;
+
+  char const* lStop;
+  while(!(lStop = cmaes_TestForTermination(&lCmaesState))) {
+    // Generate a new point cloud
+    double* const* lPop = cmaes_SamplePopulation(&lCmaesState);
+
+    // Evaluate the points
+    for(size_t i = 0; i < lPopSize; ++i) {
+      size_t lNbSteps;
+      double lSimilarity;
+      lFitnessValues[i] = lEvaluator.evaluate(lPop[i], lNbSteps, lSimilarity);
+      lFitnessValues[i] = lSimilarity;
+      lSimilarities[i] = lSimilarity;
+
+      cout << "  "
+      //<< lFitnessValues[i] << ' '
+      << lSimilarity << ' '
+      << lNbSteps << endl;
+    }
+
+    // Save the best genotype if it's the best ever
+    size_t lBestIndex = 0;
+    for(size_t i = 1; i < lPopSize; ++i)
+      if (lSimilarities[lBestIndex] > lSimilarities[i])
+        lBestIndex = i;
+
+    if (lFirstGeneration || (lBestEverSimilarity > lSimilarities[lBestIndex])) {
+      lBestEverSimilarity = lSimilarities[lBestIndex];
+
+      ofstream lFile("best.params");
+      if (!lFile)
+        cerr << "Unable to save the best genotype";
+
+      arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
+    }
+    lFirstGeneration = false;
+
+    // Update the CMAES state
+    cmaes_UpdateDistribution(&lCmaesState, lFitnessValues);
+
+    // Print stuffs
+    cout
+    << "# "
+    << cmaes_Get(&lCmaesState, "eval") << ' '  // nb evals
+    << arrayd::minValue(lFitnessValues, lPopSize)      // best generation fitness
+    << endl;
+  }
+
+  // CMAES log
+  cmaes_WriteToFile(&lCmaesState, "all", "allcmaes.dat");
+  cmaes_exit(&lCmaesState);
+
+
+
+  // Job done
+  return EXIT_SUCCESS;
+}

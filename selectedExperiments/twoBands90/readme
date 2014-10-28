@@ -1,0 +1,2 @@
+run embryo-view from the experiment directory as e.g.:
+../../tools/view/embryo-view -p best.params -s best.cells.params -e embryo.conf -t twobands9033px.pgm

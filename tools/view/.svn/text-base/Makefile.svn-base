@@ -1,0 +1,62 @@
+LOCAL_DIRECTORY = $(TOP_DIRECTORY)/tools/view
+
+INCLUDES = \
+-I./include \
+-I$(LIB_EMBRYO_PATH)/include \
+$(shell pkg-config cairo --cflags) \
+$(shell sdl-config --cflags) \
+$(shell pkg-config --cflags gsl)
+
+LDFLAGS = \
+-ldl \
+-L$(LIB_EMBRYO_PATH) -lembryo \
+$(shell pkg-config cairo --libs) \
+$(shell sdl-config --libs) \
+$(shell pkg-config --libs gsl)
+
+
+
+TARGET = embryo-view
+
+
+
+SRC_FILES = \
+./src/ChemicalAspect.cpp \
+./src/ColourAspect.cpp \
+./src/EmbryoAspect.cpp \
+./src/EmbryoView.cpp \
+./src/Main.cpp \
+./src/StateAspect.cpp \
+./src/Widget.cpp \
+./src/WidgetContainer.cpp
+
+OBJECTS = $(patsubst %.cpp,%.o,$(SRC_FILES))
+
+
+
+.PHONY: all clean cleaner install
+
+all: $(TARGET)
+
+
+
+$(TARGET): $(OBJECTS)
+	$(CXX) -o $@  $(OBJECTS) $(LDFLAGS)
+
+%.o:%.cpp
+	$(CXX) -c -fPIC $(INCLUDES) $(CXXFLAGS) $(OPTIM_FLAGS) -o $@ $<
+
+clean:
+	rm -f ./src/*.o
+
+cleaner:
+	rm -f $(TARGET)
+
+dist_files:
+	ls -1 $(LOCAL_DIRECTORY)/include/*.hpp $(LOCAL_DIRECTORY)/src/*.cpp $(LOCAL_DIRECTORY)/Makefile >> $(DIST_FILES_LIST)
+
+install:
+	cp $(TARGET) $(INSTALL_DIRECTORY)/bin
+
+uninstall:
+	rm -f $(INSTALL_DIRECTORY)/bin/$(TARGET)

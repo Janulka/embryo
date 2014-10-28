@@ -1,0 +1,8 @@
+#include <cmath>
+#include "EmbryoAspect.hpp"
+
+using namespace embryo;
+
+
+
+EmbryoAspect::~EmbryoAspect() { }

@@ -1,0 +1,47 @@
+8
+
+dir
+1152
+svn://subversion.lri.fr/tao/devert/embryo-flags/tools/view
+svn://subversion.lri.fr/tao/devert
+
+
+
+2008-11-10T16:10:50.693307Z
+1131
+jana
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+12ce44ca-0708-0410-859c-808f910676e0
+
+include
+dir
+
+src
+dir
+
+Makefile
+file
+
+
+
+
+2008-11-10T15:40:05.000000Z
+621c01e02765b2585a734ae639f2b4c8
+2008-11-10T16:10:50.693307Z
+1131
+jana
+has-props
+

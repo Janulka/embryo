@@ -1,0 +1,1684 @@
+/*
+ *  libembryo
+ *  Copyright (C) 2009-2010 by Jana Hlavacikova
+ *  Copyright (C) 2008 by Alexandre Devert
+ *
+ *           DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *                  Version 2, December 2004
+ *
+ *  Copyright (C) 2004 Sam Hocevar
+ *  14 rue de Plaisance, 75014 Paris, France
+ *  Everyone is permitted to copy and distribute verbatim or modified
+ *  copies of this license document, and changing it is allowed as long
+ *  as the name is changed.
+ *
+ *            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ *  TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ *
+ *  0. You just DO WHAT THE FUCK YOU WANT TO.
+ */
+
+#include <algorithm>
+#include <list>
+#include <sstream>
+#include <fstream>
+#include <iostream>
+#include <cmath>
+#include "embryo/Embryo.hpp"
+#include "embryo/MapTreeParser.hpp"
+#include "embryo/ObjectFactoryDealer.hpp"
+// #include "embryo/ArrayOps.hpp"
+#include "embryo/Exception.hpp"
+#include "embryo/MLPController.hpp"
+#include "embryo/ESNController.hpp"
+#include "embryo/FixedMonitor.hpp"
+#include "embryo/EnergyMonitor.hpp"
+
+#include "embryo/Picture.hpp"
+#include "embryo/PGM.hpp"
+
+using namespace std;
+using namespace embryo;
+
+int gCellCounter = 0;
+
+class exceptionDelete : public std::exception {
+public:
+
+    virtual const char* what() const throw () {
+        return "error by deleting";
+    }
+};
+
+class exceptionMerge : public std::exception {
+public:
+
+    virtual const char* what() const throw () {
+        return "error by merging";
+    }
+};
+
+class exceptionFinding : public std::exception {
+public:
+
+    virtual const char* what() const throw () {
+        return "error by searching cell";
+    }
+};
+
+void
+safeOpen(ifstream& inFile, const std::string& inFileName) {
+    inFile.open(inFileName.c_str());
+    if (!inFile.good()) {
+        cerr
+                << "Unable to open '"
+                << inFileName
+                << "'"
+                << endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
+namespace embryo {
+
+    struct FireOnInit {
+        const Embryo& mEmbryo;
+
+        FireOnInit(const Embryo & inEmbryo) : mEmbryo(inEmbryo) {
+        }
+
+        inline void operator () (EmbryoListener * inListener) {
+            inListener->onInit(mEmbryo);
+        }
+    }
+    ; // struct FireOnInit
+
+    struct FireOnUpdate {
+        const Embryo& mEmbryo;
+
+        FireOnUpdate(const Embryo & inEmbryo) : mEmbryo(inEmbryo) {
+        }
+
+        inline void operator () (EmbryoListener * inListener) {
+            inListener->onUpdate(mEmbryo);
+        }
+    }
+    ; // struct FireOnUpdate
+} // namespace embryo
+
+
+
+
+// --- Embryo -----------------------------------------------------------------
+
+Embryo::Embryo(size_t inWidth, size_t inHeight,
+        size_t inNbStates,
+        size_t inNbChemicals,
+        const Picture * inTargetPic,
+        size_t inSize,
+        HandleT<Monitor> inMonitor,
+        HandleT<Controller> inController,
+        bool inDiffuseChemicals) : mDiffuseChemicals(inDiffuseChemicals), mWidth(inWidth), mHeight(inHeight), mNbStates(inNbStates), mNbChemicals(inNbChemicals), /*mTargetPic2(inTargetPic2),*/ mCandidatePic(inTargetPic[0].width(), inTargetPic[0].height()), mMonitor(inMonitor), mController(inController), mPicsNo(inSize) {
+
+    cout << "Setup " << sizeof (mTargetPic) << inSize << " target pics " << endl;
+    //        mTargetPic = new Picture[inSize];
+    mTargetPic = inTargetPic;
+    setup();
+    mController->init(mNbStates, mNbChemicals);
+}
+
+void
+Embryo::setup() {
+    mMaxDist = new double[mPicsNo];
+    for (size_t i = 0; i < mPicsNo; i++) {
+        mMaxDist[i] = maxDistance(mTargetPic[i]);
+        cout << "max distance " << i << " : " << mMaxDist[i] << endl;
+    }
+    //    mNbChemicalsPerRow = mWidth * mNbChemicals;
+    mNbStepsMax = mNbCells;
+    mBorderVector = new double[(2 * (mWidth + mHeight)) * mNbChemicals];
+}
+
+void Embryo::initCells() {
+    if (!(mCellContainer.empty())) {
+        CellIterator itr = mCellContainer.begin();
+        while (itr != mCellContainer.end()) {
+            delete (*itr);
+            (*itr) = NULL;
+            itr = mCellContainer.erase(itr);
+            //        ++itr;
+        }
+    }
+
+    mNbCells = mWidth * mHeight;
+    bool lLeftBorder;
+    bool lRightBorder;
+    bool lUpperBorder;
+    bool lLowerBorder;
+    for (int i = 0; i < mNbCells; i++) {
+        lLeftBorder = false;
+        lRightBorder = false;
+        lUpperBorder = false;
+        lLowerBorder = false;
+        if ((i % mWidth) == 0)
+            lLeftBorder = true;
+        if (i > (mWidth - 1))
+            if (((i - mWidth + 1) % mWidth) == 0)
+                lRightBorder = true;
+        if (i < mWidth)
+            lUpperBorder = true;
+        if (i >= ((mHeight - 1) * mWidth))
+            lLowerBorder = true;
+        mCellContainer.push_back(new Cell(mNbStates, mNbChemicals, (int) (i / mWidth), i % mWidth, 1, i, lLeftBorder, lRightBorder, lUpperBorder, lLowerBorder));
+    }
+
+    ////
+    //SET NEIGHBORS
+    ///
+    CellIterator ci = mCellContainer.begin();
+    CellIterator ci2 = mCellContainer.begin();
+
+    //CellIterator ciL = mCellContainer.begin();
+    CellIterator ci3 = mCellContainer.begin();
+
+    int i = 0;
+    ++ci3;
+    while (i < (mWidth - 1)) {
+        //     std::cout << i << " ";
+        (*ci2)->addNeighbor(*ci3, 2); // add east (right) neighbor
+        (*ci3)->addNeighbor(*ci2, 6); // add west (left) neighbor
+        ++ci2;
+        ++ci3;
+        ++i;
+    }
+
+    (*(ci3))->addNeighbor(*(ci2), 6); // add west (left) neighbor
+    //   std::cout << i << std::endl;
+    ++ci2;
+    ++ci3;
+    i = 0;
+
+    while (ci2 != mCellContainer.end()) {
+        //     std::cout << "ci " << (*ci)->getPositionX() << " : " << (*ci)->getPositionY() << std::endl;
+        //     std::cout << "ci2 " << (*ci2)->getPositionX() << " : " << (*ci2)->getPositionY() << std::endl;
+        (*ci)->addNeighbor(*ci2, 4); // add south neighbor
+        (*ci2)->addNeighbor(*ci, 0); // add north neighbor
+
+        if (i < (mWidth - 1)) {
+            //       std::cout << i << " " << std::endl;
+            //       std::cout << "ci3 " << (*ci3)->getPositionX() << " : " << (*ci3)->getPositionY() << std::endl;
+            (*ci2)->addNeighbor(*ci3, 2); // add east (right) neighbor
+            //       if (i > 0) {
+            //std::cout << " _" << i << " ";
+            (*ci3)->addNeighbor(*ci2, 6); // add west (left) neighbor
+            //       }
+        } else if (i == (mWidth - 1)) {
+            //       std::cout << "--" << i << std::endl;
+            i = -1;
+        }
+
+        ++ci2;
+        ++ci;
+        ++ci3;
+        ++i;
+    }
+
+    std::cout << std::endl;
+}
+
+Embryo::~Embryo() {
+    delete[] mBorderVector;
+    //    delete[] mTargetPic;
+    delete[] mMaxDist;
+    CellIterator itr = mCellContainer.begin();
+    while (itr != mCellContainer.end()) {
+        delete (*itr);
+        (*itr) = NULL;
+        itr = mCellContainer.erase(itr);
+        //        ++itr;
+    }
+}
+
+void
+Embryo::addListener(EmbryoListener* inListener) {
+    if (find(mListeners.begin(), mListeners.end(), inListener) != mListeners.end())
+        throw Exception("Same EmbryoListener added twice");
+
+    mListeners.push_back(inListener);
+}
+
+void
+Embryo::removeListener(EmbryoListener* inListener) {
+    vector<EmbryoListener*>::iterator it =
+            find(mListeners.begin(), mListeners.end(), inListener);
+
+    if (it == mListeners.end())
+        throw Exception("Try to remove an EmbryoListener no previously added");
+
+    mListeners.erase(it);
+}
+
+void
+Embryo::init(size_t initState) {
+
+    CellIterator ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        (*ci)->init();
+        ++ci;
+    }
+    //                 arrayd::zero(mStateVector, mNbCells * mNbStates);
+    //                 arrayd::zero(mChemicalVector, mNbCells * mNbChemicals);
+    arrayd::fillBorder(mBorderVector, 2 * (mWidth + mHeight) * mNbChemicals, initState, mPicsNo);
+
+    // Initialize the monitor
+    mMonitor->init(*this);
+
+    // Listeners
+    for_each(mListeners.begin(), mListeners.end(), FireOnInit(*this));
+
+}
+
+void
+Embryo::resetMonitor(size_t inBorder) { //(double inBorder) {
+
+    //fixed vs. energy - control the ending condition
+
+    // Initialize the monitor
+    mMonitor->init(*this);
+
+    //arrayd::fillBorder(mBorderVector, mNbCells * mNbChemicals, inBorder);
+    arrayd::fillBorder(mBorderVector, 2 * (mWidth + mHeight) * mNbChemicals, inBorder, mPicsNo);
+
+    //	arrayd::fill(mBorderVector, mNbCells * (mNbChemicals + mNbStates), inBorder);
+
+    //arrayd::fillBorder(mBorderVector, 2 * (mWidth + mHeight), inBorder, mPicsNo);
+
+    // Listeners
+    //for_each(mListeners.begin(), mListeners.end(), FireOnInit(*this));
+}
+
+void
+Embryo::reshape(size_t inWidth, size_t inHeight) {
+    // Nothing to do case
+    if ((inWidth == mWidth) && (inHeight == mHeight))
+        return;
+
+    // Free the memory
+    //delete[] mVectorsMem;
+
+    // Redo a setup
+    mWidth = inWidth;
+    mHeight = inHeight;
+    setup();
+}
+
+void
+Embryo::scramble(Randomizer& inRandomizer, double inStdDev) {
+    GaussianDistribution lDistrib;
+
+    // Chemicals scramble
+
+    CellIterator ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        (*ci)->scramble(inRandomizer, inStdDev);
+        ++ci;
+    }
+    /*
+    double* lOffset = mChemicalVector;
+    for(size_t i = mNbCells * mNbChemicals; i != 0; --i, ++lOffset)
+            (*lOffset) += lDistrib(inRandomizer, inStdDev);
+    }
+
+    // States scramble
+    {
+    double* lOffset = mStateVector;
+    for(size_t i = mNbCells * mNbStates; i != 0; --i, ++lOffset)
+            (*lOffset) += lDistrib(inRandomizer, inStdDev);
+    }*/
+}
+
+double
+Embryo::energy() const {
+    //TDO: counting energy for monitor
+    double lSquareSum = 0.0;
+    //pocitat pre kazdy pixel, t.j. zaratat kazdu bunku tolkokrat, kolko pixelov obsahuje
+
+    CellConstIterator it = mCellContainer.begin();
+    while (it != mCellContainer.end()) {
+        // Chemicals sum
+        //int lPixels = (*it)->getSize();
+
+        if ((*it) != NULL) {
+            {
+                const double* lOffset = (*it)->getChemicalVector();
+                for (size_t i = mNbChemicals; i != 0; --i, ++lOffset) {
+                    if ((!(std::isnan(lOffset[i]))) && (!(std::isinf(lOffset[i]))))
+                        lSquareSum += (*lOffset) * (*lOffset);
+                }
+            }
+            // States sums
+            {
+                const double* lOffset = (*it)->getStateVector();
+                for (size_t i = mNbStates; i != 0; --i, ++lOffset) {
+                    //                    printf("lOffset: %e \n", lOffset[i]);
+                    if ((!(std::isnan(lOffset[i]))) && (!(std::isinf(lOffset[i]))))
+                        lSquareSum += (*lOffset) * (*lOffset);
+                }
+            }
+
+            //            printf("lSquare: %e \n", lSquareSum);
+            lSquareSum *= ((double) ((*it)->getSize()));
+        }
+        ++it;
+    }
+    // Job done
+    /*
+            // Chemicals sum
+                    {
+                    const double* lOffset = mChemicalVector;
+                    for(size_t i = mNbCells * mNbChemicals; i != 0; --i, ++lOffset)
+                            lSquareSum += (*lOffset) * (*lOffset);
+                    }
+
+                    // States sums
+                    {
+                    const double* lOffset = mStateVector;
+                    for(size_t i = mNbCells * mNbStates; i != 0; --i, ++lOffset)
+                            lSquareSum += (*lOffset) * (*lOffset);
+                    }
+
+                    // Job done*/
+    return lSquareSum;
+}
+
+void
+Embryo::getColours(Picture & inPicture) const {
+    //cout << "Embryo::getColours" << endl;
+
+    inPicture.eraseAspectCells();
+
+    // 	CellContainer & cc = mCellContainer;
+    // 	CellIterator & ci = cc.begin();
+    int c = 0;
+    //    printf("getColors");
+    CellConstIterator ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        const double* lSrcStates = (*ci)->getStateVector();
+        const double* lSrcChems = (*ci)->getChemicalVector();
+        // 	  for (int i = 0; i < mNbStates; i++)
+        // 	    printf("lSrcStates[%i] %d \n", i, lSrcStates[i]);
+        // 	  for (int i = 0; i < mNbChemicals; i++)
+        // 	    printf("lSrcChems[%i] %d \n", i, lSrcChems[i]);
+        //std::cout << "lSrcStates " << lSrcStates[i] << std::endl;
+
+        double lAspect = mController->colour(lSrcStates, lSrcChems);
+        //std::cout << "lAspect " << lAspect << std::endl;
+        //        printf("%d> x: %d, y: %d, s: %d, a: %e \n",++c, (*ci)->getPositionX(), (*ci)->getPositionY(), (*ci)->getSize(), lAspect);
+        inPicture.setNextAspectCell((*ci)->getPositionX(), (*ci)->getPositionY(), (*ci)->getSize(), lAspect);
+        ++ci;
+    }
+    //    printf("\n\n print picture's aspect cells\n");
+    //    inPicture.print();
+
+    // 	double* lDst = inPicture.pixels();
+    // 	const double* lSrcStates = mStateVector;
+    // 	const double* lSrcChems = mChemicalVector;
+    //
+    //   	for(size_t i = mHeight; i != 0; --i)
+    // 		for(size_t j = mWidth; j != 0; --j, lDst++, lSrcStates += mNbStates, lSrcChems += mNbChemicals) {
+    // 			(*lDst) = mController->colour(lSrcStates, lSrcChems);
+    // 			//cout << "colour : " << (*lDst) << endl;
+    // 		}
+}
+
+void
+Embryo::getChemicals(Picture& inPicture, size_t inIndex) const {
+
+    inPicture.eraseAspectCells();
+
+    // 	CellContainer & cc = mCellContainer;
+    // 	CellIterator & ci = cc.begin();
+    CellConstIterator ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        const double* chem = (*ci)->getChemicalVector() + inIndex;
+        //std::cout << "*chem " << *chem << std::endl;
+        inPicture.setNextAspectCell((*ci)->getPositionX(), (*ci)->getPositionY(), (*ci)->getSize(), *chem);
+        ++ci;
+    }
+
+
+    // 	const double* lSrc = mChemicalVector + inIndex;
+    //
+    // 	for(size_t i = mHeight; i != 0; --i)
+    // 		for(size_t j = mWidth; j != 0; --j, lDst++, lSrc += mNbChemicals)
+    // 			(*lDst) = (*lSrc);
+}
+
+void
+Embryo::getStates(Picture& inPicture, size_t inIndex) const {
+
+    inPicture.eraseAspectCells();
+
+    // 	CellContainer & cc = mCellContainer;
+    // 	CellIterator & ci = cc.begin();
+    CellConstIterator ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        const double* st = (*ci)->getChemicalVector() + inIndex; //TODO: need of inIndex?
+        //std::cout << "*st " << *st << std::endl;
+        inPicture.setNextAspectCell((*ci)->getPositionX(), (*ci)->getPositionY(), (*ci)->getSize(), *st);
+        ++ci;
+    }
+
+    // 	const double* lSrc = mStateVector + inIndex;
+    //
+    // 	for(size_t i = mHeight; i != 0; --i)
+    // 		for(size_t j = mWidth; j != 0; --j, lDst++, lSrc += mNbStates)
+    // 			(*lDst) = (*lSrc);
+}
+
+double Embryo::getColorOnPixel(const size_t x, const size_t y, Picture & pic) {
+
+    AspectCellIterator aciBegin;
+    AspectCellIterator aciEnd;
+    pic.getAspectCells(aciBegin, aciEnd);
+
+    while (aciBegin != aciEnd) {
+        if (((*aciBegin)->getPositionX() == x) && ((*aciBegin)->getPositionY() == y)) {
+            return (*aciBegin)->getAspect();
+        }
+        ++aciBegin;
+    }
+
+    return NULL;
+
+    // 	int pos = (int)(pic.width() * x + y);
+    // 	const double* pixels = pic.pixels();
+    // 	return pixels[pos];
+}
+
+/////////////////////////
+
+void
+Embryo::diffuseChemicals() {
+    /*
+     * Gaussian blur order 2, two passes algorithm
+     */
+
+    // First pass (horizontal)
+
+    CellIterator ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        if ((!(*ci)->toDelete())) {
+            //            throw exceptionDelete();
+            if ((*ci)->blurFirstPass())
+                (*ci)->blurSecondPass();
+        }
+        ++ci;
+    }
+
+    // Second pass (vertical)
+
+    //    ci = mCellContainer.begin();
+    //    while (ci != mCellContainer.end()) {
+    //        if (!((*ci)->toDelete())) {
+    //            //            TODO: throw exceptionDelete();
+    //            (*ci)->blurSecondPass();
+    //        }
+    //        ++ci;
+    //    }
+}
+
+bool Embryo::checkConstraints(Cell * iCell) {
+    //circle
+    double radius = mWidth;
+    if (mHeight < mWidth)
+        radius = mHeight;
+    //TODO:
+    int tmpX = iCell->getPositionX() - iCell->getSize() - mWidth / 2;
+    int tmpY = iCell->getPositionY() - iCell->getSize() - mHeight / 2;
+
+    int tmpX2 = iCell->getPositionX() + iCell->getSize() - mWidth / 2;
+    int tmpY2 = iCell->getPositionY() + iCell->getSize() - mHeight / 2;
+
+    if ((tmpX * tmpX + tmpY * tmpY < radius * radius) && (tmpX2 * tmpX2 + tmpY2 * tmpY2 < radius * radius))
+        return true;
+
+    return false;
+}
+
+bool
+Embryo::update() {
+    // Diffusion of the chemicals
+    //    bool bCellChange = false;
+    mCellChange = false;
+
+    if (mDiffuseChemicals)
+        diffuseChemicals();
+
+
+    int lNbChemCells = 5;
+    //    bool bIsNeighbor[5];
+    bool * bIsNeighbor = new bool[5];
+
+    //    double ** outNeighborsChemicals = (double**) calloc((unsigned) (lNbChemCells), sizeof(double*));
+    //    for (int i = 0; i < lNbChemCells; i++)
+    //      outNeighborsChemicals[i] = (double*) calloc((unsigned) (mNbChemicals), sizeof(double));
+
+    double ** outNeighborsChemicals = new double *[lNbChemCells];
+    for (int i = 0; i < lNbChemCells; ++i) {
+        outNeighborsChemicals[i] = new double[mNbChemicals];
+    }
+
+    for (int i = 0; i < mNbChemicals; ++i)
+        bIsNeighbor[i] = true;
+
+    CellIterator ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        double * outOldState;
+        double * outNewState;
+        double * outNewChemicals;
+
+        (*ci)->update(outOldState, outNeighborsChemicals, outNewState, outNewChemicals, bIsNeighbor);
+
+
+        double oGrowing;
+
+        mController->update((const double* &) outOldState, (double * const* &) outNeighborsChemicals, outNewState, outNewChemicals, bIsNeighbor, oGrowing); // growing/dividing request is set
+
+        //3.14159266 is the range <-0.5*PI,0.5*PI> of arc tan of the used NN function
+
+        double top = 3.14159266 / 2.0;
+        if (oGrowing < ((3.14159266 / 3.0) - top)) {
+            (*ci)->setDividing(true);
+        } else if (oGrowing >= (top - (3.14159266 / 3.0))) {
+            (*ci)->setGrowing(true);
+        }
+
+
+
+        //        if (mController->update((const double* &) outOldState, (double * const* &) outNeighborsChemicals, outNewState, outNewChemicals, bIsNeighbor)) { // growing true/false is set
+        //            (*ci)->setGrowing(true);
+        //            bFinish = true;
+        //        }
+
+
+        ++ci;
+    }
+
+    //growing
+    ci = mCellContainer.begin();
+    bool bGrowing = false;
+    Direction oDir1;
+    Direction oDir2;
+    Cell * oCell1;
+    Cell * oCell2;
+    Cell * oCell3;
+    double * newStateVector;
+
+
+    ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        if ((*ci != NULL) && (checkConstraints(*ci)) && (!(*ci)->toDelete())) {
+            //            printf("cell index:%d, size:%d\n", (*ci)->getIndex(), (*ci)->getSize());
+            if ((*ci)->wantsGrow()) {
+
+                bGrowing = (*ci)->getGrowingDirections(oDir1, oDir2, oCell1, oCell2, oCell3);
+
+                if (bGrowing) {
+                    int lNewX = (oCell2->getPositionX() < (*ci)->getPositionX()) ? oCell2->getPositionX() : (*ci)->getPositionX();
+                    int lNewY = (oCell1->getPositionY() < (*ci)->getPositionY()) ? oCell1->getPositionY() : (*ci)->getPositionY();
+                    int lNewLength = sqrt((*ci)->getSize() * 4);
+                    bool bModPos = false;
+
+//                    if ((lNewX % lNewLength == 0) && (lNewY % lNewLength == 0))
+                        bModPos = true;
+                    if (bModPos) {
+
+                        //                    printf("index:%d\n", oCell1->getIndex());
+                        //                    printf("index:%d\n", oCell2->getIndex());
+                        //                    printf("index:%d\n", oCell3->getIndex());
+
+                        if (!(changeNeighborhood(*ci, oDir1, oDir2)))
+                            throw exceptionMerge();
+
+                        newStateVector = (*ci)->getStateVectorAdr();
+
+                        removeMeGetState(oCell1, newStateVector);
+                        removeMeGetState(oCell2, newStateVector);
+                        removeMeGetState(oCell3, newStateVector);
+
+
+                        //interpolation of states
+                        for (int s = 0; s < mNbStates; s++)
+                            newStateVector[s] /= (double) 4.0;
+
+                        mCellChange = true;
+                    }
+
+                }
+            } else if ((*ci)->wantsDivide()) {
+                divide(*ci);
+
+
+            }
+
+        }
+        ++ci;
+    }
+
+    ci = mCellContainer.begin();
+    while (ci != mCellContainer.end()) {
+        if ((*ci)->toDelete()) {
+            delete (*ci);
+            (*ci) = NULL;
+            ci = mCellContainer.erase(ci);
+        } else
+            ++ci;
+    }
+
+    //    std::cout << std::endl;
+    //    std::cout << std::endl;
+    //    ci = mCellContainer.begin();
+    //    while (ci != mCellContainer.end()) {
+    //        std::cout << "\ni: " << (*ci)->getIndex() << " size: " << (*ci)->getSize() << " x: " << (*ci)->getPositionX() << " y: " << (*ci)->getPositionY() << "\n";
+    //        CellIterator itrB;
+    //        CellIterator itrE;
+    //        for (int i = 0; i < 8; i++) {
+    //            if (i % 2 == 0) {
+    //                printf("\t%d: ", i);
+    //                if (!((*ci)->isOnTheBorder((Direction) i)))
+    //                    if ((*ci)->getNeighbors((Direction) i, itrB, itrE)) {
+    //                        while (itrB != itrE) {
+    //                            printf("%d,", (*itrB)->getIndex());
+    //                            ++itrB;
+    //                        }
+    //                    }
+    //            }
+    //        }
+    //        ++ci;
+    //    }
+    //    std::cout << std::endl;
+
+    for (int i = 0; i < lNbChemCells; ++i)
+        if (outNeighborsChemicals[i] != NULL) {
+            delete outNeighborsChemicals[i];
+            outNeighborsChemicals[i] = NULL;
+        }
+    if (outNeighborsChemicals)
+        delete[] outNeighborsChemicals;
+
+    if (bIsNeighbor)
+        delete[] bIsNeighbor;
+
+
+    // Ask the monitor if should stop
+    mMonitor->next(*this);
+
+    // Listeners
+    for_each(mListeners.begin(), mListeners.end(), FireOnUpdate(*this));
+
+    // Job done
+    //    if (bCellChange)
+    return mMonitor->hasNext();
+    //    else
+    //        return bCellChange;
+}
+
+bool sorter(Cell * iCell1, Cell * iCell2) {
+    return (iCell1->getIndex() < iCell2->getIndex());
+}
+
+bool duplicates(Cell * iCell1, Cell * iCell2) {
+    return (iCell1->getIndex() == iCell2->getIndex());
+}
+
+void Embryo::removeMeGetState(Cell *& iCellP, double *& iStateVector) {
+    const double * tmpState = (iCellP)->getStateVector();
+    iCellP->setToDelete();
+    if ((tmpState == NULL) || (iStateVector == NULL))
+        return;
+    for (int s = 0; s < mNbStates; s++) {
+
+        double d = tmpState[s];
+
+        if ((!(std::isnan(d))) && (!(std::isinf(d))) && (!(std::isnan(iStateVector[s]))) && (!(std::isinf(iStateVector[s])))) {
+            //            std::cout << d << " | " << iStateVector[s] << std::endl;
+            ((iStateVector)[s]) += d;
+        }
+    }
+    //    mCellContainer.remove(iCellP);
+    //    delete iCellP;
+    //    iCellP = NULL;
+}
+
+void Embryo::changeBorderStatus(Cell *& iNewCell, Cell * iC1, Cell * iC2, Cell * iC3) {
+    for (int i = 0; i < 8; i++) {
+        if ((iC1->isOnTheBorder((Direction) i)) || (iC2->isOnTheBorder((Direction) i)) || (iC3->isOnTheBorder((Direction) i)))
+            iNewCell->setAsBorder((Direction) i);
+    }
+}
+
+bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction & iDir2) {
+
+    Direction iDirOp1 = (Direction) ((iDir1 >= 4) ? (iDir1 - 4) : (iDir1 + 4));
+    Direction iDirOp2 = (Direction) ((iDir2 >= 4) ? (iDir2 - 4) : (iDir2 + 4));
+
+    //change neighbors of merged cells
+    Cell * lNeighborCell1 = NULL;
+    iNewCell->getFirstNeighbor(iDir1, lNeighborCell1);
+    Cell * lNeighborCell2 = NULL;
+    iNewCell->getFirstNeighbor(iDir2, lNeighborCell2);
+    if ((lNeighborCell1 == NULL) || (lNeighborCell2 == NULL) || (lNeighborCell1->getIndex() == lNeighborCell2->getIndex()))
+        throw exceptionMerge();
+
+    Cell * lNeighborCellCross = NULL;
+    lNeighborCell1->getFirstNeighbor(iDir2, lNeighborCellCross);
+    Cell * lNeighborCellCrossCheck = NULL;
+    lNeighborCell2->getFirstNeighbor(iDir1, lNeighborCellCrossCheck);
+    if ((lNeighborCellCross == NULL) || (lNeighborCellCross->getIndex() != lNeighborCellCrossCheck->getIndex()))
+        throw exceptionMerge();
+
+    //change my own neighborhood
+    CellIterator ocb;
+    CellIterator oce;
+
+    CellContainer cc;
+    CellContainer cc2;
+
+    //    printf("merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+
+    changeBorderStatus(iNewCell, lNeighborCell1, lNeighborCell2, lNeighborCellCross);
+
+    //    printf("\nDir %d: ", iDir1);
+    if (lNeighborCell1->getContainer(iDir1, cc)) { //getting neigborhs in direction iDir1 of my current neighbor from direction iDir1
+
+        if (!(lNeighborCellCross->getContainer(iDir1, cc2))) //neigbors to merge
+            throw exceptionMerge();
+
+        cc.sort(sorter); //sort
+        cc2.sort(sorter);
+        cc.merge(cc2); //merging neigbors
+        cc.unique(duplicates); //remove duplicates
+
+        ocb = cc.begin();
+        oce = cc.end();
+        iNewCell->changeAllMyNeighbors(iDir1, ocb, oce); //changing my current neigbors
+
+        //change neighbors of neighbors of the merged cells
+        lNeighborCell1->changeNeighborhood(iDir1, iDirOp1, lNeighborCell1, lNeighborCellCross, iNewCell);
+        lNeighborCellCross->changeNeighborhood(iDir1, iDirOp1, lNeighborCellCross, lNeighborCell1, iNewCell);
+
+        if (!(iNewCell->getContainer(iDir1, cc))) //my neigbors from direction iDir1 - currently assigned from lNeighborCell1
+            throw exceptionMerge();
+        //        ocb = cc.begin();
+        //        oce = cc.end();
+        //        while (ocb != oce) {
+        //            printf("neigh i:%d\t", (*ocb)->getIndex());
+        //            ++ocb;
+        //        }
+    } //else iNewCell->deleteNeighbors(iDir1,)//esle clean my neighbors ?
+
+    //    printf("\nDir %d: ", iDirOp2);
+    if ((iNewCell->getContainer(iDirOp2, cc))) {
+        if (!(lNeighborCell1->getContainer(iDirOp2, cc2)))
+            throw exceptionMerge();
+
+        cc.sort(sorter); //sort
+        cc2.sort(sorter);
+        cc.merge(cc2); //merging neigbors
+        cc.unique(duplicates); //remove duplicates
+
+        ocb = cc.begin();
+        oce = cc.end();
+        iNewCell->changeAllMyNeighbors(iDirOp2, ocb, oce);
+
+        //change neighbors of neighbors of the merged cells
+        lNeighborCell1->changeNeighborhood(iDirOp2, iDir2, lNeighborCell1, iNewCell, iNewCell);
+
+        if (!(iNewCell->getContainer(iDirOp2, cc)))
+            throw exceptionMerge();
+        //        ocb = cc.begin();
+        //        oce = cc.end();
+        //        while (ocb != oce) {
+        //            printf("neigh i:%d\t", (*ocb)->getIndex());
+        //            ++ocb;
+        //        }
+    }
+
+    //    printf("\nDir %d: ", iDir2);
+    if (lNeighborCell2->getContainer(iDir2, cc)) {
+
+        if (!(lNeighborCellCross->getContainer(iDir2, cc2)))
+            throw exceptionMerge();
+
+        cc.sort(sorter); //sort
+        cc2.sort(sorter);
+        cc.merge(cc2); //merging neigbors
+        cc.unique(duplicates); //remove duplicates
+
+        ocb = cc.begin();
+        oce = cc.end();
+        iNewCell->changeAllMyNeighbors(iDir2, ocb, oce);
+
+        //change neighbors of neighbors of the merged cells
+        lNeighborCell2->changeNeighborhood(iDir2, iDirOp2, lNeighborCell2, lNeighborCellCross, iNewCell);
+        lNeighborCellCross->changeNeighborhood(iDir2, iDirOp2, lNeighborCellCross, lNeighborCell2, iNewCell);
+
+        if (!(iNewCell->getContainer(iDir2, cc)))
+            throw exceptionMerge();
+        //        ocb = cc.begin();
+        //        oce = cc.end();
+        //        while (ocb != oce) {
+        //            printf("neigh i:%d\t", (*ocb)->getIndex());
+        //            ++ocb;
+        //        }
+    }
+
+
+
+    //    printf("\nDir %d: ", iDirOp1);
+    if ((iNewCell->getContainer(iDirOp1, cc))) {
+        if (!(lNeighborCell2->getContainer(iDirOp1, cc2)))
+            throw exceptionMerge();
+
+        cc.sort(sorter); //sort
+        cc2.sort(sorter);
+        cc.merge(cc2); //merging neigbors
+        cc.unique(duplicates); //remove duplicates
+
+        ocb = cc.begin();
+        oce = cc.end();
+        iNewCell->changeAllMyNeighbors(iDirOp1, ocb, oce);
+
+        //change neighbors of neighbors of the merged cells
+        lNeighborCell2->changeNeighborhood(iDirOp1, iDir1, lNeighborCell2, iNewCell, iNewCell);
+
+
+        if (!(iNewCell->getContainer(iDirOp1, cc)))
+            throw exceptionMerge();
+        //        ocb = cc.begin();
+        //        oce = cc.end();
+        //        while (ocb != oce) {
+        //            printf("neigh i:%d\t", (*ocb)->getIndex());
+        //            ++ocb;
+        //        }
+    }
+
+    //calibrating position
+    if (iDir1 == N) {
+        iNewCell->decreasePositionY(iNewCell->getSize());
+    }
+    if (iDir2 == W) {
+        iNewCell->decreasePositionX(iNewCell->getSize());
+    }
+
+    //increase size
+    iNewCell->multiSize(4);
+
+    //    std::cout << std::endl;
+    //    CellIterator ci = mCellContainer.begin();
+    //    while (ci != mCellContainer.end()) {
+    //        std::cout << "\ni: " << (*ci)->getIndex() << " size: " << (*ci)->getSize() << " x: " << (*ci)->getPositionX() << " y: " << (*ci)->getPositionY() << "\n";
+    //        CellIterator itrB;
+    //        CellIterator itrE;
+    //        for (int i = 0; i < 8; i++) {
+    //            if (i % 2 == 0) {
+    //                printf("\t%d: ", i);
+    //                if (!((*ci)->isOnTheBorder((Direction) i)))
+    //                    if ((*ci)->getNeighbors((Direction) i, itrB, itrE)) {
+    //                        while (itrB != itrE) {
+    //                            printf("%d,", (*itrB)->getIndex());
+    //                            ++itrB;
+    //                        }
+    //                    }
+    //            }
+    //        }
+    //        ++ci;
+    //    }
+    //    printf("\n\n");
+
+    return true;
+}
+
+void Embryo::divide(Cell *& iCell) {
+    if (iCell->getSize() == 1)
+        return;
+
+    mCellChange = true;
+
+    int lSize = iCell->getSize() / 4;
+    Cell * lCellNW = new Cell(mNbStates, mNbChemicals, iCell->getPositionY(), iCell->getPositionX(), lSize, mNbCells++, iCell->isOnTheBorder(W), iCell->isOnTheBorder(E), iCell->isOnTheBorder(N), iCell->isOnTheBorder(S));
+    Cell * lCellNE = new Cell(mNbStates, mNbChemicals, iCell->getPositionY(), iCell->getPositionX() + lSize, lSize, mNbCells++, iCell->isOnTheBorder(W), iCell->isOnTheBorder(E), iCell->isOnTheBorder(N), iCell->isOnTheBorder(S));
+    Cell * lCellSW = new Cell(mNbStates, mNbChemicals, iCell->getPositionY() + lSize, iCell->getPositionX(), lSize, mNbCells++, iCell->isOnTheBorder(W), iCell->isOnTheBorder(E), iCell->isOnTheBorder(N), iCell->isOnTheBorder(S));
+    Cell * lCellSE = new Cell(mNbStates, mNbChemicals, iCell->getPositionY() + lSize, iCell->getPositionX() + lSize, lSize, mNbCells++, iCell->isOnTheBorder(W), iCell->isOnTheBorder(E), iCell->isOnTheBorder(N), iCell->isOnTheBorder(S));
+
+    CellContainer ccNeighbors;
+    CellIterator ccItrB;
+
+    { //north
+        if (!(iCell->isOnTheBorder(N))) {
+            iCell->getContainer(N, ccNeighbors);
+            ccItrB = ccNeighbors.begin();
+            while ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionX()) < (lCellNE)->getPositionX())) {
+                lCellNW->addNeighbor(*ccItrB, N);
+                (*ccItrB)->removeNeighbor(S, iCell);
+                (*ccItrB)->addNeighbor(lCellNW, S);
+                ++ccItrB;
+            }
+
+            --ccItrB;
+            if ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionX() + (*ccItrB)->getSize()) > (lCellNE)->getPositionX())) {
+                lCellNE->addNeighbor(*ccItrB, N);
+                (*ccItrB)->addNeighbor(lCellNE, S);
+            }
+            ++ccItrB;
+
+            while (ccItrB != ccNeighbors.end()) {
+                lCellNE->addNeighbor(*ccItrB, N);
+                (*ccItrB)->removeNeighbor(S, iCell);
+                (*ccItrB)->addNeighbor(lCellNE, S);
+                ++ccItrB;
+            }
+        }
+
+        lCellSE->addNeighbor(lCellNE, N);
+        lCellSW->addNeighbor(lCellNW, N);
+    }
+
+    { //south
+        if (!(iCell->isOnTheBorder(S))) {
+            iCell->getContainer(S, ccNeighbors);
+            ccItrB = ccNeighbors.begin();
+            while ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionX()) < (lCellSE)->getPositionX())) {
+                lCellSW->addNeighbor(*ccItrB, S);
+                (*ccItrB)->removeNeighbor(N, iCell);
+                (*ccItrB)->addNeighbor(lCellSW, N);
+                ++ccItrB;
+            }
+
+            --ccItrB;
+            if ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionX() + (*ccItrB)->getSize()) > (lCellSE)->getPositionX())) {
+                lCellSE->addNeighbor(*ccItrB, S);
+                (*ccItrB)->addNeighbor(lCellSE, N);
+            }
+            ++ccItrB;
+
+            while (ccItrB != ccNeighbors.end()) {
+                lCellSE->addNeighbor(*ccItrB, S);
+                (*ccItrB)->removeNeighbor(N, iCell);
+                (*ccItrB)->addNeighbor(lCellSE, N);
+                ++ccItrB;
+            }
+        }
+        lCellNE->addNeighbor(lCellSE, S);
+        lCellNW->addNeighbor(lCellSW, S);
+    }
+
+    { //west
+        if (!(iCell->isOnTheBorder(W))) {
+            iCell->getContainer(W, ccNeighbors);
+            ccItrB = ccNeighbors.begin();
+            while ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionY()) < (lCellSW)->getPositionY())) {
+                lCellNW->addNeighbor(*ccItrB, W);
+                (*ccItrB)->removeNeighbor(E, iCell);
+                (*ccItrB)->addNeighbor(lCellNW, E);
+                ++ccItrB;
+            }
+
+            --ccItrB;
+            if ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionY() + (*ccItrB)->getSize()) > (lCellSW)->getPositionY())) {
+                lCellSW->addNeighbor(*ccItrB, W);
+                (*ccItrB)->addNeighbor(lCellSW, E);
+            }
+            ++ccItrB;
+
+            while (ccItrB != ccNeighbors.end()) {
+                lCellSW->addNeighbor(*ccItrB, W);
+                (*ccItrB)->removeNeighbor(E, iCell);
+                (*ccItrB)->addNeighbor(lCellSW, E);
+                ++ccItrB;
+            }
+        }
+        lCellNE->addNeighbor(lCellNW, W);
+        lCellSE->addNeighbor(lCellSW, W);
+    }
+
+    { //east
+        if (!(iCell->isOnTheBorder(E))) {
+            iCell->getContainer(E, ccNeighbors);
+            ccItrB = ccNeighbors.begin();
+            while ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionY()) < (lCellSE)->getPositionY())) {
+                lCellNE->addNeighbor(*ccItrB, E);
+                (*ccItrB)->removeNeighbor(W, iCell);
+                (*ccItrB)->addNeighbor(lCellNE, W);
+                ++ccItrB;
+            }
+
+            --ccItrB;
+            if ((ccItrB != ccNeighbors.end()) && (((*ccItrB)->getPositionY() + (*ccItrB)->getSize()) > (lCellSE)->getPositionY())) {
+                lCellSE->addNeighbor(*ccItrB, E);
+                (*ccItrB)->addNeighbor(lCellSE, W);
+            }
+            ++ccItrB;
+
+            while (ccItrB != ccNeighbors.end()) {
+                lCellSE->addNeighbor(*ccItrB, E);
+                (*ccItrB)->removeNeighbor(W, iCell);
+                (*ccItrB)->addNeighbor(lCellSE, W);
+                ++ccItrB;
+            }
+        }
+        lCellNW->addNeighbor(lCellNE, E);
+        lCellSW->addNeighbor(lCellSE, E);
+    }
+
+
+    mCellContainer.push_back(lCellNW);
+    mCellContainer.push_back(lCellNE);
+    mCellContainer.push_back(lCellSW);
+    mCellContainer.push_back(lCellSE);
+
+    iCell->setToDelete();
+
+    printf("dividing %d to: %d, %d, %d, %d\n", iCell->getIndex(), lCellNW->getIndex(), lCellNE->getIndex(), lCellSW->getIndex(), lCellSE->getIndex());
+
+    //    std::cout << "___after division of cell " << iCell->getIndex() << std::endl;
+    //    CellIterator ci = mCellContainer.begin();
+    //    while (ci != mCellContainer.end()) {
+    //        std::cout << "\ni: " << (*ci)->getIndex() << " size: " << (*ci)->getSize() << " x: " << (*ci)->getPositionX() << " y: " << (*ci)->getPositionY() << "\n";
+    //        CellIterator itrB;
+    //        CellIterator itrE;
+    //        for (int i = 0; i < 8; i++) {
+    //            if (i % 2 == 0) {
+    //                printf("\t%d: ", i);
+    //                if (!((*ci)->isOnTheBorder((Direction) i)))
+    //                    if ((*ci)->getNeighbors((Direction) i, itrB, itrE)) {
+    //                        while (itrB != itrE) {
+    //                            printf("%d,", (*itrB)->getIndex());
+    //                            ++itrB;
+    //                        }
+    //                    }
+    //            }
+    //        }
+    //        ++ci;
+    //    }<< endl
+    //    printf("\n\n");
+
+}
+
+double Embryo::setupController(const double* inVector) {
+    // Setup the parameters of the model
+    try {
+        arrayd::copy(mController->parameters(), inVector, mController->nbParameters());
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "error while reading controller "
+                << endl;
+    }
+}
+
+double Embryo::getSimilarity(size_t iIndex) {
+    double lSimilarity = 0.0;
+    getColours(mCandidatePic);
+    //    getColours(mTargetPic[iIndex]);
+
+    //COLOR FITNESS (to minimize)
+    //    lSimilarity = (distance(mCandidatePic, mTargetPic[iIndex])) / mMaxDist[iIndex];
+
+    //CELLS STRUCTURE FITNESS (to maximize)
+    //        const double * lOffset = mTargetPic[iIndex].pixels();
+    //        size_t lNbPixels = mTargetPic[iIndex].width() * mTargetPic[iIndex].height();
+    //        printf("pixels: %i \n\n", lNbPixels);
+    //        for (size_t i = lNbPixels; i != 0; --i, ++lOffset) {
+    //            printf("pix: %i, val: %e \n", i, *lOffset);
+    //        }
+
+    lSimilarity = (distanceStructure(mCandidatePic, mTargetPic[iIndex]));
+//    printf("\n lSimilarity: %e\n", lSimilarity);
+    return lSimilarity;
+}
+
+double Embryo::evaluate(const double* inVector, size_t& outNbSteps, double& outSimilarity)//, const Picture& mTargetPic) 
+{
+
+    // Setup the parameters of the model
+    try {
+        arrayd::copy(mController->parameters(), inVector, mController->nbParameters());
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "error while reading controller "
+                << endl;
+    }
+
+
+
+    size_t lNbSteps = 0;
+
+    //for(init() && int pic = 0; update() && (lNbSteps < nbStepsMax()) && pic < ; lNbSteps += 1);
+
+    outNbSteps = 0;
+    outSimilarity = 0;
+    double lSimilaritySum = 0;
+    //double* lSimilarity = new double[mPicsNo];
+    //vector<double> lSimilarity(mPicsNo);
+    double lSimilarity;
+    //double lSimilarity[mPicsNo];
+    //cout << "picsNO : " << mPicsNo << endl;
+
+    double lPenalty = double(outNbSteps) / (mPicsNo * nbStepsMax());
+
+    double bestFitness = 1.0;
+    double worstFitness = 0.0;
+
+    //	for (size_t i = 0, init((1/(mPicsNo-1)) * i); i < mPicsNo; i++) {
+    for (size_t i = 0, init(i); i < mPicsNo; i++) {
+        //cout << "embryo::eval no. " << i << endl;
+        //init();
+        lNbSteps = 0;
+        lSimilarity = 0;
+        //for(resetMonitor((1/(mPicsNo-1)) * i); update() && (lNbSteps < nbStepsMax()); lNbSteps += 1);
+        for (resetMonitor(i); update() && (lNbSteps < nbStepsMax()); lNbSteps += 1);
+        //TODO: refresh GUI output. Move evaluate f. out of Embryo to optim main
+
+        if (lNbSteps < nbStepsMax()) {
+            //cout << "computing fintess" << endl;
+            getColours(mCandidatePic);
+
+            //lSimilarity[i] = distance(mCandidatePic, mTargetPic[i]) / mMaxDist[i];
+            lSimilarity = (distance(mCandidatePic, mTargetPic[i])) / mMaxDist[i];
+            //cout << "lSimilarity for : " << i << " : " << lSimilarity << " | maxDist[" << i << "]" << mMaxDist[i] << endl;
+            //if no. of steps -  --> lTime -, lTime * lTime --, outSimilarity ---
+            double lPenalty = double(lNbSteps) / nbStepsMax();
+            //lSimilarity[i] *= (lPenalty * lPenalty + 1.0);
+            lSimilarity *= (lPenalty * lPenalty + 1.0);
+            //cout << "lSimilarity + penalty for " << i << " : " << lSimilarity << endl;
+        } else
+            lSimilarity = 1.0;
+
+        if (lSimilarity < bestFitness)
+            bestFitness = lSimilarity;
+        if (lSimilarity > worstFitness)
+            worstFitness = lSimilarity;
+
+        lSimilaritySum += lSimilarity;
+        outNbSteps += lNbSteps;
+        lNbSteps = 0;
+    }
+
+    lPenalty = double(outNbSteps) / (mPicsNo * nbStepsMax());
+    //00
+    outSimilarity = lSimilaritySum / mPicsNo;
+
+
+    if (outSimilarity > 1) {
+        outSimilarity = 1;
+    } else if (outSimilarity < 0) {
+        outSimilarity = 0;
+    }
+
+    return outSimilarity;
+
+}
+
+void Embryo::loadCells(std::istream & inStream) {
+    inStream.exceptions(ios::failbit | ios::badbit);
+
+    inStream >> mNbCells;
+
+    int lIndex;
+    int lSize;
+    int lX;
+    int lY;
+    bool lLeftBorder;
+    bool lRightBorder;
+    bool lUpBorder;
+    bool lDownBorder;
+    int lTF;
+    Cell * lCell;
+
+    //    printf("num: %d | ", mNbCells);
+
+    try {
+        for (size_t i = 0; i < mNbCells; i++) {
+            inStream >> lIndex;
+            inStream >> lSize;
+            inStream >> lX;
+            inStream >> lY;
+            inStream >> lTF;
+            //            if (lTF == )
+            lLeftBorder = lTF;
+            inStream >> lTF;
+            lRightBorder = lTF;
+            inStream >> lTF;
+            lUpBorder = lTF;
+            inStream >> lTF;
+            lDownBorder = lTF;
+
+            lCell = new Cell(mNbStates, mNbChemicals, lY, lX, lSize, lIndex, lLeftBorder, lRightBorder, lUpBorder, lDownBorder);
+            //        std::cout << i << "> i: " << (lCell)->getIndex() << " size: " << (lCell)->getSize() << " x: " << (lCell)->getPositionX() << " y: " << (lCell)->getPositionY() << "\n";
+            mCellContainer.push_back(lCell);
+            //            mCellContainer.push_back(new Cell(mNbStates, mNbChemicals, lY, lX, lSize, lIndex, lLeftBorder, lRightBorder, lUpBorder, lDownBorder));
+
+        }
+
+        //    printf("\n size: %d | ", mCellContainer.size());
+        //    CellIterator ccItrB = mCellContainer.begin();
+        //    int counter = 0;
+        //    while (ccItrB != mCellContainer.end()) {
+        //        printf("%d> i: %d \n ", counter++, (*ccItrB)->getIndex());
+        //        ++ccItrB;
+        //    }
+
+        //TODO: read neighbors
+        int lNumber;
+        CellIterator ccItrB = mCellContainer.begin();
+        while (ccItrB != mCellContainer.end()) {
+            for (int d = 0; d < 8; d++) {
+                if ((d % 2) == 0) {
+                    inStream >> lNumber;
+                    for (size_t i = 0; i < lNumber; i++) {
+                        inStream >> lIndex;
+                        if (!(findCell(lIndex, lCell)))
+                            throw exceptionFinding();
+                        (*ccItrB)->addNeighbor(lCell, (Direction) d);
+                    }
+                }
+            }
+            ++ccItrB;
+        }
+    } catch (exception& inException) {
+        throw Exception(inException.what());
+    }
+}
+
+bool Embryo::findCell(int iIndex, Cell *& oCell) {
+    CellIterator ccItrB = mCellContainer.begin();
+    while (ccItrB != mCellContainer.end()) {
+        if ((*ccItrB)->getIndex() == iIndex) {
+            oCell = (*ccItrB);
+            return true;
+        }
+        ++ccItrB;
+    }
+    return false;
+}
+
+void Embryo::saveCells(std::ostream & inStream) {
+    //    inStream.setf(ios::out | ios::binary);
+    inStream << mCellContainer.size();
+    CellIterator ccItrB = mCellContainer.begin();
+    while (ccItrB != mCellContainer.end()) {
+        inStream << ' ' << (*ccItrB)->getIndex() << ' ' << (*ccItrB)->getSize() << ' ' << (*ccItrB)->getPositionX() << ' ' << (*ccItrB)->getPositionY() << ' ' << (*ccItrB)->isOnTheBorder(W) << ' ' << (*ccItrB)->isOnTheBorder(E) << ' ' << (*ccItrB)->isOnTheBorder(N) << ' ' << (*ccItrB)->isOnTheBorder(S); // << endl;
+        ++ccItrB;
+    }
+    // add neighbors
+    CellContainer ccNeigbors;
+    ccItrB = mCellContainer.begin();
+    CellIterator ccItrNeig;
+    while (ccItrB != mCellContainer.end()) {
+        for (int d = 0; d < 8; d++) {
+            if ((d % 2) == 0) {
+                if ((*ccItrB)->getContainer((Direction) d, ccNeigbors)) {
+                    inStream << ' ' << ccNeigbors.size();
+                    ccItrNeig = ccNeigbors.begin();
+                    while (ccItrNeig != ccNeigbors.end()) {
+                        inStream << ' ' << (*ccItrNeig)->getIndex();
+                        ++ccItrNeig;
+                    }
+                } else {
+                    int nula = 0;
+                    inStream << ' ' << nula;
+                }
+            }
+        }
+        ++ccItrB;
+    }
+    inStream << endl;
+}
+
+Embryo::Handle
+Embryo::load(istream& inStream, uint32_t inSeed, const std::string & pathContent) {
+    cout << "Embryo::load" << endl;
+
+    // Read the input stream
+    MapTreeParser lParser(inStream);
+    HandleT<MapTree> lRoot = lParser.parse();
+    cout << "map tree root parsed";
+
+    lRoot->add("path", pathContent);
+    cout << "added 'path' to map tree root: ";
+    cout << pathContent;
+
+    // Retrieve the embryo
+    //ObjectFactoryDealer lDealer(inSeed);
+    //EmbryoFactory lFactory(lDealer);
+
+
+    // Retrieve the controller
+    HandleT<Controller> lController;
+    HandleT<MapTree> lControllerNode = lRoot->getChild("controller");
+
+    if (lControllerNode->hasKey("mlp.controller")) {
+        HandleT<MapTree> lNode = lControllerNode->getChild("mlp.controller");
+        size_t lNbHiddenNeurons;
+        lNode->get("nb.hidden.neurons", lNbHiddenNeurons);
+        lController = new MLPController(lNbHiddenNeurons);
+    } else if (lControllerNode->hasKey("esn.controller")) {
+        HandleT<MapTree> lNode = lControllerNode->getChild("esn.controller");
+        double lDensity, lSpectralRadius;
+        lNode->get("density", lDensity);
+        lNode->get("spectral.radius", lSpectralRadius);
+        //lController = new ESNController(lDensity, lSpectralRadius, inSeed);	//comment because of changing the arguments to references in virtual :Update(..) function in main Controller.hpp
+    }
+    cout << "The controller retrieved" << endl;
+
+    // Retrieve the monitor
+    HandleT<Monitor> lMonitor;
+    HandleT<MapTree> lMonitorNode = lRoot->getChild("monitor");
+
+    if (lMonitorNode->hasKey("fixed.monitor")) {
+        HandleT<MapTree> lNode = lMonitorNode->getChild("fixed.monitor");
+        size_t lNbSteps;
+        lNode->get("max.nb.steps", lNbSteps);
+        lMonitor = new FixedMonitor(lNbSteps);
+    } else if (lMonitorNode->hasKey("energy.monitor")) {
+        HandleT<MapTree> lNode = lMonitorNode->getChild("energy.monitor");
+        size_t lWindowSize;
+        lNode->get("window.size", lWindowSize);
+        lMonitor = new EnergyMonitor(lWindowSize);
+    }
+
+    cout << "controller + monitor created \n ";
+
+    // Retrieve the embryo constructor parameters
+    bool lDiffuseChemicals;
+    size_t lWidth, lHeight, lNbStates, lNbChemicals;
+
+    std::string lPathTargetPic;
+    std::string lPath;
+
+    try {
+        lRoot->get("width", lWidth);
+        lRoot->get("height", lHeight);
+        lRoot->get("nb.states", lNbStates);
+        lRoot->get("nb.chemicals", lNbChemicals);
+        lRoot->get("diffuse.chemicals", lDiffuseChemicals);
+        lRoot->get("target.pic", lPathTargetPic);
+        lRoot->get("path", lPath);
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "Error while loading parameters from map tree '"
+                << lWidth
+                << lHeight
+                << lNbStates
+                << lNbChemicals
+                << lDiffuseChemicals
+                << lPathTargetPic
+                << "' :\n  "
+                << inException.getMessage()
+                << endl;
+    }
+    cout << "embryo config info: " << endl;
+    cout << "lWidth " << lWidth << endl;
+    cout << "lHeight " << lHeight << endl;
+    cout << "lNbStates " << lNbStates << endl;
+    cout << "lNbChemicals " << lNbChemicals << endl;
+    cout << "lDiffuseChemicals " << lDiffuseChemicals << endl;
+    cout << "lPathTargetPic name " << lPathTargetPic << endl;
+    cout << "lPath " << lPath << endl;
+
+
+    // Load the target pictures
+
+    cout << "pics to read: " << lPath << lPathTargetPic << ".pgm" << endl;
+
+    const char DELIM = '|';
+
+    vector<string> names;
+    int i = 0;
+    do {
+        if (lPathTargetPic[i] == DELIM) {
+            names.push_back(lPathTargetPic.substr(0, i));
+            cout << i << "-th pic to read: " << lPathTargetPic.substr(0, i) << endl;
+            if (i == lPathTargetPic.length())
+                lPathTargetPic.erase(0, i);
+            else
+                lPathTargetPic.erase(0, i + 1);
+
+            i = 0;
+        }
+        i++;
+    } while (!lPathTargetPic.empty());
+
+
+    cout << "path parsed" << endl;
+
+    Picture* lTargetPic = new Picture[names.size()];
+    //    Picture lTargetPic[names.size()];
+    cout << " names.size(): " << names.size() << endl;
+    cout << " names.size(): " << sizeof (lTargetPic) << endl;
+
+    string targetPicPath;
+    for (size_t i = 0; i < names.size(); i++) {
+        targetPicPath = lPath + names[i] + ".pgm";
+        cout << " i: " << i << " name: " << names[i] << targetPicPath << endl;
+        try {
+            ifstream lFile;
+            safeOpen(lFile, targetPicPath);
+            //            lTargetPic[i].setup(lWidth, lHeight);
+            //            lTargetPic[i] = loadPGM(lFile);
+            loadPGM(lFile, lTargetPic[i]);
+            lTargetPic[i].setName(names[i]);
+            //double lBorderValue = (1.0/((double)(names.size())-1.0)) * ((double)i);
+            //cout << "lBorderValue : " << lBorderValue << endl;
+            //lTargetPic[i].setBorder(lBorderValue);
+
+            lTargetPic[i].setBorder(i);
+
+            lFile.close();
+        } catch (embryo::Exception& inException) {
+            cerr
+                    << "Error while loading '"
+                    << lPathTargetPic
+                    << "' :\n  "
+                    << inException.getMessage()
+                    << endl;
+        }
+    }
+
+
+    cout << " pics read" << endl;
+
+    // Build the embryo
+    Embryo* lResult;
+    try {
+        lResult = new Embryo(lWidth, lHeight,
+                lNbStates, lNbChemicals,
+                &lTargetPic[0],
+                names.size(),
+                lMonitor,
+                lController,
+                lDiffuseChemicals);
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "\n Error while building embryo \n"
+                << inException.getMessage()
+                << endl;
+    }
+
+    cout << " embryo built" << endl;
+
+    if (lRoot->hasKey("nb.steps.max")) {
+        size_t lNbStepsMax;
+        lRoot->get("nb.steps.max", lNbStepsMax);
+        lResult->nbStepsMax() = lNbStepsMax;
+        cout << "nb steps max: ";
+        cout << lNbStepsMax;
+    }
+
+    // Job done
+    return lResult;
+
+
+
+    //		Embryo::Handle lEmbryo =
+    //		dynamic_pointer_cast<Embryo, Object>(lFactory.produce(lRoot));
+
+    // job done
+    //	return lEmbryo;
+}
+
+
+// --- EmbryoFactory ----------------------------------------------------------
+
+EmbryoFactory::EmbryoFactory(const ObjectFactoryDealer & inDealer) : ObjectFactory("embryo", inDealer) {
+}
+
+EmbryoFactory::~EmbryoFactory() {
+}
+
+Object::Handle
+EmbryoFactory::produce(MapTree::Handle inMapTree) const {
+    // Retrieve the controller instance
+    Controller::Handle lController;
+    {
+        pair<std::string, MapTree::Handle> lNode =
+                inMapTree->getChild("controller")->getChild();
+        lController = dealer().deserializeT<Controller > (lNode.first, lNode.second);
+    }
+
+
+    cout << "Embryo factory produce:" << endl;
+
+
+    // Retrieve the monitor instance
+    Monitor::Handle lMonitor;
+    {
+        pair<std::string, MapTree::Handle> lNode =
+                inMapTree->getChild("monitor")->getChild();
+        lMonitor = dealer().deserializeT<Monitor > (lNode.first, lNode.second);
+    }
+
+    bool lDiffuseChemicals;
+    size_t lWidth, lHeight, lNbStates, lNbChemicals;
+
+    std::string lPathTargetPic;
+    std::string lPath;
+
+    try {
+        inMapTree->get("width", lWidth);
+        inMapTree->get("height", lHeight);
+        inMapTree->get("nb.states", lNbStates);
+        inMapTree->get("nb.chemicals", lNbChemicals);
+        inMapTree->get("diffuse.chemicals", lDiffuseChemicals);
+        inMapTree->get("target.pic", lPathTargetPic);
+        inMapTree->get("path", lPath);
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "Error while loading parameters from map tree '"
+                << lWidth
+                << lHeight
+                << lNbStates
+                << lNbChemicals
+                << lDiffuseChemicals
+                << lPathTargetPic
+                << "' :\n  "
+                << inException.getMessage()
+                << endl;
+    }
+    cout << "embryo config info: " << endl;
+    cout << "lWidth " << lWidth << endl;
+    cout << "lHeight " << lHeight << endl;
+    cout << "lNbStates " << lNbStates << endl;
+    cout << "lNbChemicals " << lNbChemicals << endl;
+    cout << "lDiffuseChemicals " << lDiffuseChemicals << endl;
+    cout << "lPathTargetPic name " << lPathTargetPic << endl;
+    cout << "lPath " << lPath << endl;
+
+
+
+    // Load the target pictures
+    cout << "pics to read: " << lPath << lPathTargetPic << ".pgm" << endl;
+
+    const char DELIM = '|';
+    vector<string> names;
+    int i = 0;
+    do {
+        if (lPathTargetPic[i] == DELIM) {
+            names.push_back(lPathTargetPic.substr(0, i));
+            cout << i << "-th pic to read: " << lPathTargetPic.substr(0, i) << endl;
+            if (i == lPathTargetPic.length())
+                lPathTargetPic.erase(0, i);
+            else
+                lPathTargetPic.erase(0, i + 1);
+            i = 0;
+        }
+        i++;
+    } while (!lPathTargetPic.empty());
+
+    cout << "path parsed" << endl;
+
+    //      Picture* lTargetPic = new Picture[names.size()];
+    cout << " names.size(): " << names.size() << endl;
+    Picture* lTargetPic = new Picture[names.size()];
+    //    Picture lTargetPic[names.size()];
+    cout << " names.size(): " << sizeof (lTargetPic) << endl;
+
+    string targetPicPath;
+    for (size_t i = 0; i < names.size(); i++) {
+        targetPicPath = lPath + names[i] + ".pgm";
+        cout << " i: " << i << " name: " << names[i] << targetPicPath << endl;
+        try {
+            ifstream lFile;
+            safeOpen(lFile, targetPicPath);
+            //            lTargetPic[i].setup(lWidth, lHeight);
+            loadPGM(lFile, lTargetPic[i]);
+            //            lTargetPic[i] = loadPGM(lFile);
+            lTargetPic[i].setName(names[i]);
+            //	double lBorderValue = (1.0/((double)(names.size())-1.0)) * ((double)i);  //(1/(names.size()-1)) * i;
+            //      cout << "lBorderValue : " << lBorderValue << endl;
+            lTargetPic[i].setBorder(i);
+            //    lTargetPic[i].setBorder(lBorderValue);
+            //	lTargetPic[i].setBorder((1/(names.size()-1)) * i);
+            //cout << "lTargetPic.width() : " << lTargetPic->width() << endl;
+            //cout << "lTargetPic.height() : " << lTargetPic->height() << endl;
+            lFile.close();
+        } catch (embryo::Exception& inException) {
+            cerr
+                    << "Error while loading '"
+                    << lPathTargetPic
+                    << "' :\n  "
+                    << inException.getMessage()
+                    << endl;
+        }
+    }
+
+
+    // Build the embryo
+    Embryo* lResult;
+    try {
+        lResult = new Embryo(lWidth, lHeight,
+                lNbStates, lNbChemicals,
+                &lTargetPic[0],
+                names.size(),
+                lMonitor,
+                lController,
+                lDiffuseChemicals);
+    } catch (embryo::Exception& inException) {
+        cerr
+                << "\n Error while building embryo \n"
+                << inException.getMessage()
+                << endl;
+    }
+
+    if (inMapTree->hasKey("nb.steps.max")) {
+        size_t lNbStepsMax;
+        inMapTree->get("nb.steps.max", lNbStepsMax);
+        lResult->nbStepsMax() = lNbStepsMax;
+        cout << "nb steps max: ";
+        cout << lNbStepsMax;
+    }
+
+    // Job done
+    return lResult;
+}
