@@ -342,7 +342,7 @@ Embryo::reshape(size_t inWidth, size_t inHeight) {
 
 void
 Embryo::scramble(Randomizer& inRandomizer, double inStdDev) {
-    GaussianDistribution lDistrib;
+    //GaussianDistribution lDistrib;
 
     // Chemicals scramble
 
@@ -392,7 +392,6 @@ void
 Embryo::getColours(Picture & inPicture) const {
     inPicture.eraseAspectCells();
 
-    int c = 0;
     CellConstIterator ci = mCellContainer.begin();
     while (ci != mCellContainer.end()) {
         const double* lSrcStates = (*ci)->getStateVector();
@@ -440,7 +439,7 @@ double Embryo::getColorOnPixel(const size_t x, const size_t y, Picture & pic) {
         ++aciBegin;
     }
 
-    return NULL;
+    return 0;
 }
 
 void
@@ -506,12 +505,11 @@ void Embryo::updateStructure() {
                 bGrowing = (*ci)->getGrowingDirections(oDir1, oDir2, oCell1, oCell2, oCell3);
 
                 if (bGrowing) {
-                    int lNewX = (oCell2->getPositionX() < (*ci)->getPositionX()) ? oCell2->getPositionX() : (*ci)->getPositionX();
-                    int lNewY = (oCell1->getPositionY() < (*ci)->getPositionY()) ? oCell1->getPositionY() : (*ci)->getPositionY();
-                    int lNewLength = sqrt((*ci)->getSize() * 4);
+                    //int lNewX = (oCell2->getPositionX() < (*ci)->getPositionX()) ? oCell2->getPositionX() : (*ci)->getPositionX();
+                    //int lNewY = (oCell1->getPositionY() < (*ci)->getPositionY()) ? oCell1->getPositionY() : (*ci)->getPositionY();
+                    //int lNewLength = sqrt((*ci)->getSize() * 4);
                     bool bModPos = false;
-
-                    //                    if ((lNewX % lNewLength == 0) && (lNewY % lNewLength == 0))
+                    //if ((lNewX % lNewLength == 0) && (lNewY % lNewLength == 0))
                     bModPos = true;
                     if (bModPos) {
                         if ((changeNeighborhood(*ci, oDir1, oDir2))) {
@@ -523,7 +521,7 @@ void Embryo::updateStructure() {
 
 
                             //interpolation of states
-                            for (int s = 0; s < mNbStates; s++)
+                            for (size_t s = 0; s < mNbStates; s++)
                                 newStateVector[s] /= ((double) 4.0);
 
                             mCellChange = true;
@@ -554,12 +552,11 @@ void Embryo::updateStructureSingle(Cell *& iCell) {
             bGrowing = (iCell)->getGrowingDirections(oDir1, oDir2, oCell1, oCell2, oCell3);
 
             if (bGrowing) {
-                int lNewX = (oCell2->getPositionX() < (iCell)->getPositionX()) ? oCell2->getPositionX() : (iCell)->getPositionX();
-                int lNewY = (oCell1->getPositionY() < (iCell)->getPositionY()) ? oCell1->getPositionY() : (iCell)->getPositionY();
-                int lNewLength = sqrt((iCell)->getSize() * 4);
+                //int lNewX = (oCell2->getPositionX() < (iCell)->getPositionX()) ? oCell2->getPositionX() : (iCell)->getPositionX();
+                //int lNewY = (oCell1->getPositionY() < (iCell)->getPositionY()) ? oCell1->getPositionY() : (iCell)->getPositionY();
+                //int lNewLength = sqrt((iCell)->getSize() * 4);
                 bool bModPos = false;
-
-                //                    if ((lNewX % lNewLength == 0) && (lNewY % lNewLength == 0))
+                //if ((lNewX % lNewLength == 0) && (lNewY % lNewLength == 0))
                 bModPos = true;
                 if (bModPos) {
 
@@ -572,7 +569,7 @@ void Embryo::updateStructureSingle(Cell *& iCell) {
 
 
                         //interpolation of states
-                        for (int s = 0; s < mNbStates; s++)
+                        for (size_t s = 0; s < mNbStates; s++)
                             newStateVector[s] /= ((double) 4.0);
 
                         mCellChange = true;
@@ -640,7 +637,7 @@ Embryo::update(bool ibColor) {
         }
     }
 
-    int maxth = omp_get_max_threads();
+    //int maxth = omp_get_max_threads();
 
     if (!ibColor) {
         updateStructure();
@@ -695,8 +692,7 @@ void Embryo::removeMeGetState(Cell *& iCellP, double *& iStateVector) {
     iCellP->setToDelete();
     if ((tmpState == NULL) || (iStateVector == NULL))
         return;
-    for (int s = 0; s < mNbStates; s++) {
-
+    for (size_t s = 0; s < mNbStates; s++) {
         double d = tmpState[s];
 
         if ((!(std::isnan(d))) && (!(std::isinf(d))) && (!(std::isnan(iStateVector[s]))) && (!(std::isinf(iStateVector[s])))) {
@@ -727,7 +723,7 @@ void Embryo::printout() {
                     if (!((*ci)->isOnTheBorder((Direction) i)))
                         if ((*ci)->getNeighbors((Direction) i, itrB, itrE)) {
                             while (itrB != itrE) {
-                                printf("%d,", (*itrB)->getIndex());
+                                printf("%lu,", (*itrB)->getIndex());
                                 ++itrB;
                             }
                         }
@@ -787,7 +783,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
         if (!(lNeighborCellCross->getContainer(iDir1, cc2))) //neigbors to merge
         {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(4);
         }
 
@@ -807,7 +803,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
         if (!(iNewCell->getContainer(iDir1, cc))) //my neigbors from direction iDir1 - currently assigned from lNeighborCell1
         {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(5);
         }
     } else
@@ -816,7 +812,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
     if ((iNewCell->getContainer(iDirOp2, cc))) {
         if (!(lNeighborCell1->getContainer(iDirOp2, cc2))) {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(6);
         }
 
@@ -834,7 +830,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
 
         if (!(iNewCell->getContainer(iDirOp2, cc))) {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(7);
         }
 
@@ -845,7 +841,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
 
         if (!(lNeighborCellCross->getContainer(iDir2, cc2))) {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(8);
         }
 
@@ -864,7 +860,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
 
         if (!(iNewCell->getContainer(iDir2, cc))) {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(9);
         }
 
@@ -875,7 +871,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
     if ((iNewCell->getContainer(iDirOp1, cc))) {
         if (!(lNeighborCell2->getContainer(iDirOp1, cc2))) {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(10);
         }
 
@@ -894,7 +890,7 @@ bool Embryo::changeNeighborhood(Cell *& iNewCell, Direction & iDir1, Direction &
 
         if (!(iNewCell->getContainer(iDirOp1, cc))) {
             printout();
-            printf("\n merging %d, dir: %d, %d :: %d | %d | %d\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
+            printf("\n merging %lu, dir: %d, %d :: %lu | %lu | %lu\n", iNewCell->getIndex(), iDir1, iDir2, lNeighborCell1->getIndex(), lNeighborCell2->getIndex(), lNeighborCellCross->getIndex());
             throw exceptionMerge(11);
         }
 
@@ -1063,7 +1059,7 @@ void Embryo::divide(Cell *& iCell) {
     iCell->setToDelete();
 }
 
-double Embryo::setupController(const double* inVector) {
+void Embryo::setupController(const double* inVector) {
     // Setup the parameters of the model
     try {
         arrayd::copy(mController->parameters(), inVector, mController->nbParameters());
@@ -1120,7 +1116,9 @@ double Embryo::evaluate(const double* inVector, size_t& outNbSteps, double& outS
     double bestFitness = 1.0;
     double worstFitness = 0.0;
 
-    for (size_t i = 0, initCells(true), init(i); i < mPicsNo; i++) {
+    for (size_t i = 0; i < mPicsNo; i++) {
+        initCells(true);
+        init(i);
         lNbSteps = 0;
         lSimilarity = 0;
         for (resetMonitor(i); update(false) && (lNbSteps < nbStepsMax()); lNbSteps += 1);
@@ -1165,18 +1163,16 @@ void Embryo::loadCells(std::istream & inStream) {
 
     inStream >> mNbCells;
 
-    int lIndex;
-    int lSize;
-    int lX;
-    int lY;
+    size_t lIndex;
+    size_t lSize;
+    size_t lX;
+    size_t lY;
     bool lLeftBorder;
     bool lRightBorder;
     bool lUpBorder;
     bool lDownBorder;
     int lTF;
     Cell * lCell;
-    double lValue = 0.0;
-
     try {
         for (size_t i = 0; i < mNbCells; i++) {
             inStream >> lIndex;
@@ -1198,7 +1194,7 @@ void Embryo::loadCells(std::istream & inStream) {
 
         }
 
-        int lNumber;
+        size_t lNumber;
         CellIterator ccItrB = mCellContainer.begin();
         while (ccItrB != mCellContainer.end()) {
             for (int d = 0; d < 8; d++) {
@@ -1219,7 +1215,7 @@ void Embryo::loadCells(std::istream & inStream) {
     }
 }
 
-bool Embryo::findCell(int iIndex, Cell *& oCell) {
+bool Embryo::findCell(size_t iIndex, Cell *& oCell) {
     CellIterator ccItrB = mCellContainer.begin();
     while (ccItrB != mCellContainer.end()) {
         if ((*ccItrB)->getIndex() == iIndex) {
@@ -1355,7 +1351,7 @@ Embryo::load(istream& inStream, uint32_t inSeed, const std::string & pathContent
 
     int counter = 1;
     vector<string> names;
-    int i = 0;
+    size_t i = 0;
     do {
         if (lPathTargetPic[i] == DELIM) {
             names.push_back(lPathTargetPic.substr(0, i));
@@ -1398,7 +1394,7 @@ Embryo::load(istream& inStream, uint32_t inSeed, const std::string & pathContent
 
 
     // Build the embryo
-    Embryo* lResult;
+    Embryo* lResult = NULL;
     try {
         lResult = new Embryo(lWidth, lHeight,
                 lNbStates, lNbChemicals,
@@ -1505,7 +1501,7 @@ EmbryoFactory::produce(MapTree::Handle inMapTree) const {
 
     const char DELIM = '|';
     vector<string> names;
-    int i = 0;
+    size_t i = 0;
     do {
         if (lPathTargetPic[i] == DELIM) {
             names.push_back(lPathTargetPic.substr(0, i));
@@ -1548,7 +1544,7 @@ EmbryoFactory::produce(MapTree::Handle inMapTree) const {
 
 
     // Build the embryo
-    Embryo* lResult;
+    Embryo* lResult = NULL;
     try {
         lResult = new Embryo(lWidth, lHeight,
                 lNbStates, lNbChemicals,

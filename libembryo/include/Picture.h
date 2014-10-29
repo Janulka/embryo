@@ -145,11 +145,11 @@ namespace embryo {
 
         void init();
 
-        void init(int iSize, double iAspect);
+        void init(size_t iSize, double iAspect);
 
         void eraseAspectCells();
 
-        void setNextAspectCell(int iPositionX, int iPositionY, int iSize, double iAspect);
+        void setNextAspectCell(size_t iPositionX, size_t iPositionY, size_t iSize, double iAspect);
 
         void print();
     }

@@ -41,6 +41,7 @@ namespace embryo {
 
     class Embryo : public Object {
     private:
+        bool mbDifferentStatesInitialization;
         bool mDiffuseChemicals;
         size_t mWidth, mHeight, mNbStates, mNbChemicals, mNbCells, /*mNbChemicalsPerRow,*/ mNbStepsMax, mPicsNo;//, mMaxNeigbors;
         const Picture * mTargetPic;
@@ -62,7 +63,6 @@ namespace embryo {
         size_t mStateSize;
 
         bool mCellChange;
-        bool mbDifferentStatesInitialization;
 
         size_t mStructureSteps;
     public:
@@ -156,6 +156,7 @@ namespace embryo {
             for (size_t t = 0; t < mPicsNo; t++)
                 if (mTargetPic[t].getName() == iName)
                     return t;
+            return 0;
         }
 
         inline const double * getTargetPicPixelsC(size_t iIndex) const {
@@ -217,7 +218,7 @@ namespace embryo {
         // Load an embryo from a file. init should be called after
         static Embryo::Handle load(std::istream& inStream, uint32_t inSeed, const std::string& pathContent, bool & oGuiOuput);
 
-        double setupController(const double* inVector);
+        void setupController(const double* inVector);
 
         double getSimilarity(size_t iIndex, bool ibColor);
 
@@ -227,12 +228,12 @@ namespace embryo {
 
         void changeBorderStatus(Cell *& iNewCell, Cell * iC1, Cell * iC2, Cell * iC3);
 
-        bool findCell(int iIndex, Cell *& oCell);
+        bool findCell(size_t iIndex, Cell *& oCell);
 
         void loadCells(std::istream& inStream);
         void saveCells(std::ostream& inStream);
         void initCells(size_t initState);
-	void printout();
+        void printout();
     private:
         void setup();
 

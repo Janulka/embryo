@@ -216,24 +216,25 @@ embryo::savePGM(ostream& inStream, Picture& inPicture) {
     AspectCellIterator aciEnd;
     inPicture.getAspectCells(aciBegin, aciEnd);
 
-    int pix = 0;
-    int x, y, maxX, maxY;
+    size_t pix = 0;
+    size_t x, y;
     x = (*aciBegin)->getPositionX();
     y = (*aciBegin)->getPositionY();
-    maxX = x + sqrt((*aciBegin)->getSize());
-    maxY = y + sqrt((*aciBegin)->getSize());
+    //size_t maxX, maxY;
+    //maxX = x + sqrt((*aciBegin)->getSize());
+    //maxY = y + sqrt((*aciBegin)->getSize());
 
     while (pix < lNbPixels) {
-        int myX = pix % inPicture.width();
-        int myY = pix / inPicture.height();
+        size_t myX = pix % inPicture.width();
+        size_t myY = pix / inPicture.height();
 
         if (!((myX >= x) && (myX < (x + sqrt((*aciBegin)->getSize()))) && (myY >= y) && (myY < (y + sqrt((*aciBegin)->getSize()))))) {
             inPicture.getAspectCells(aciBegin, aciEnd);
             while (aciBegin != aciEnd) {
                 x = (*aciBegin)->getPositionX();
                 y = (*aciBegin)->getPositionY();
-                maxX = x + sqrt((*aciBegin)->getSize());
-                maxY = y + sqrt((*aciBegin)->getSize());
+                //maxX = x + sqrt((*aciBegin)->getSize());
+                //maxY = y + sqrt((*aciBegin)->getSize());
 
                 if ((myX >= x) && (myX < (x + sqrt((*aciBegin)->getSize()))) && (myY >= y) && (myY < (y + sqrt((*aciBegin)->getSize()))))
                     continue;

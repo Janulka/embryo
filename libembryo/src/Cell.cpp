@@ -36,7 +36,7 @@ public:
     }
 };
 
-Cell::Cell(size_t inNbStates, size_t inNbChemicals, int inRow, int inColumn, int iSize, size_t iIndex, bool iLeftBorder, bool iRightBorder, bool iUpperBorder, bool iLowerBorder, double iValue) {
+Cell::Cell(size_t inNbStates, size_t inNbChemicals, size_t inRow, size_t inColumn, size_t iSize, size_t iIndex, bool iLeftBorder, bool iRightBorder, bool iUpperBorder, bool iLowerBorder, double iValue) {
     // Allocate memory for the states and the chemicals
     mVectorsMem = new double[2 * (inNbStates + inNbChemicals)];
 
@@ -66,9 +66,9 @@ Cell::Cell(size_t inNbStates, size_t inNbChemicals, int inRow, int inColumn, int
     mReadyToDelete = false;
 }
 
-//Cell::Cell(size_t inNbStates, size_t inNbChemicals, int inRow, int inColumn, int iSize, int iIndex, Cell * iCell) {
+//Cell::Cell(size_t inNbStates, size_t inNbChemicals, size_t inRow, size_t inColumn, size_t iSize, size_t iIndex, Cell * iCell) {
 
-Cell::Cell(size_t inNbStates, size_t inNbChemicals, int inRow, int inColumn, int iSize, size_t iIndex, bool iLeftBorder, bool iRightBorder, bool iUpperBorder, bool iLowerBorder, const Cell * iCell) {
+Cell::Cell(size_t inNbStates, size_t inNbChemicals, size_t inRow, size_t inColumn, size_t iSize, size_t iIndex, bool iLeftBorder, bool iRightBorder, bool iUpperBorder, bool iLowerBorder, const Cell * iCell) {
     // Allocate memory for the states and the chemicals
     mVectorsMem = new double[2 * (inNbStates + inNbChemicals)];
 
@@ -441,7 +441,7 @@ void Cell::getChemicalList(CellIterator &itrBegin, CellIterator &itrEnd, double 
                 //                continue;
                 const double * tmp = (*itr)->getPrevChemicalVector();
                 if ((tmp != NULL)) {
-                    int sharedLength = sqrt((*itr)->getSize());
+                    size_t sharedLength = sqrt((*itr)->getSize());
                     if (ibX)
                         checkPositionX(sharedLength, (*itr)->getPositionX(), sharedLength);
                     else
@@ -468,7 +468,7 @@ void Cell::getChemicalList(CellIterator &itrBegin, CellIterator &itrEnd, double 
     //}
 }
 
-void Cell::checkPositionX(int & ioSharedLength, int iPosx, int iSize) {
+void Cell::checkPositionX(size_t & ioSharedLength, size_t iPosx, size_t iSize) {
     if (iPosx < getPositionX())
         ioSharedLength -= (getPositionX() - iPosx);
     double myLength = sqrt(getSize());
@@ -476,7 +476,7 @@ void Cell::checkPositionX(int & ioSharedLength, int iPosx, int iSize) {
         ioSharedLength -= iPosx + iSize - getPositionX() - myLength;
 }
 
-void Cell::checkPositionY(int & ioSharedLength, int iPosY, int iSize) {
+void Cell::checkPositionY(size_t & ioSharedLength, size_t iPosY, size_t iSize) {
     if (iPosY < getPositionY())
         ioSharedLength -= (getPositionY() - iPosY);
     double myLength = sqrt(getSize());
@@ -700,7 +700,7 @@ bool duplicates(Cell * iCell1, Cell * iCell2) {
 }
 
 void Cell::changeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToChange, Cell *& iCellToRemove, Cell *& iNewCell) {
-    CellContainer * cc;
+    CellContainer * cc = NULL;
     switch (iWhichNeighborSide) {
         case 0:
         { //N
@@ -723,7 +723,7 @@ void Cell::changeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToChange, C
             break;
         }
         default:
-            break;
+            return;
     }
 
     CellIterator ci = ((*cc).begin());
@@ -766,7 +766,7 @@ void Cell::changeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToChange, C
 }
 
 void Cell::changeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToChange, Cell *& iNewCell) {
-    CellContainer * cc;
+    CellContainer * cc = NULL;
     switch (iWhichNeighborSide) {
         case 0:
         { //N
@@ -789,7 +789,7 @@ void Cell::changeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToChange, C
             break;
         }
         default:
-            break;
+            return;
     }
 
     CellIterator ci = ((*cc).begin());
@@ -806,7 +806,7 @@ void Cell::changeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToChange, C
 }
 
 void Cell::removeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToRemove) {
-    CellContainer * cc;
+    CellContainer * cc = NULL;
     switch (iWhichNeighborSide) {
         case N:
         { //N
@@ -829,7 +829,7 @@ void Cell::removeNeighbor(Direction iWhichNeighborSide, Cell *& iCellToRemove) {
             break;
         }
         default:
-            break;
+            return;
     }
 
     CellIterator ci = ((*cc).begin());
@@ -1024,8 +1024,6 @@ bool Cell::getContainer(Direction iDir, CellContainer & oContainer) {
 }
 
 bool Cell::grow(CellIterator & oTargetCellsBegin, CellIterator & oTargetCellsEnd) {
-
-
     bool bGrowUp = true;
     CellContainer cc = mUpperCell;
     if ((cc.size() != 1) || (!cc.front()->wantsGrow()))
@@ -1249,8 +1247,8 @@ bool Cell::grow(CellIterator & oTargetCellsBegin, CellIterator & oTargetCellsEnd
                 }
             }
         }
-
     }
+    return false;
 }
 
 void Cell::addNeighbor(Cell * &iCell, int iDirection) {

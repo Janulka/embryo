@@ -219,7 +219,7 @@ ESNController::colour(const double* inState, const double* inChemicals) const {
 
 
 double ESNController::structure(const double* inState, const double* inChemicals) const {
- ;
+    return 0;
 }
 
 // --- ESNControllerFactory ---------------------------------------------------

@@ -81,7 +81,6 @@ EmbryoView::paint(cairo_t* inContext, bool ibColor) {
     aciBegin = acc.begin();
     aciEnd = acc.end();
 
-    int c = 0;
     while (aciBegin != aciEnd) {
 
         double lY = (double) ((*aciBegin)->getPositionY()) * lRectWidth + lShift;

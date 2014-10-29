@@ -12,7 +12,7 @@ using namespace embryo;
 
 AspectCell::AspectCell() : mPositionX(0), mPositionY(0), mSize(0), mAspect(0.0) { }
 
-AspectCell::AspectCell(int iPositionX, int iPositionY, int iSize, double iAspect)// : mPositionX(iPositionX), mPositionY(iPositionY), mSize(iSize), mAspect(iAspect)
+AspectCell::AspectCell(size_t iPositionX, size_t iPositionY, size_t iSize, double iAspect)// : mPositionX(iPositionX), mPositionY(iPositionY), mSize(iSize), mAspect(iAspect)
 {
     mPositionX = iPositionX;
     mPositionY = iPositionY;
@@ -22,7 +22,7 @@ AspectCell::AspectCell(int iPositionX, int iPositionY, int iSize, double iAspect
 
 AspectCell::~AspectCell() { }
 
-void AspectCell::setCell(int iPositionX, int iPositionY, int iSize, double iAspect) {
+void AspectCell::setCell(size_t iPositionX, size_t iPositionY, size_t iSize, double iAspect) {
   mPositionX = iPositionX;
   mPositionY = iPositionY;
   mSize = iSize;

@@ -154,24 +154,18 @@ embryo::distanceStructure(const Picture& inA, const Picture& inB) {
     int y = 0;
     int total_black = 0;
     int total_white = 0;
-    double lTotalColorDiff = 0;
 
     while (aciBegin != aciEnd) {
 
         const double* lPixels = inB.pixels();
 
-        double lAspectCandidate = (*aciBegin)->getAspect();
         x = (*aciBegin)->getPositionX();
         y = (*aciBegin)->getPositionY();
         int maxX = x + sqrt((*aciBegin)->getSize());
         int maxY = y + sqrt((*aciBegin)->getSize());
 
-        int plus = 0;
-        int minus = 0;
-
         int black = 0;
         int white = 0;
-        double lColorDiff = 0;
 
         //map of color pixels [color, number]
         //round a color pixel value, insert into map. after inserting all pixels of a cell, sort map; get the max number of same color pixels
@@ -183,9 +177,7 @@ embryo::distanceStructure(const Picture& inA, const Picture& inB) {
             x = xOld;
             while (x < maxX) {
                 //getColor
-                ios_base::fixed;
                 double lColor = lPixels[y * inB.width() + x];
-                //
                 if (lColor < 0.5) //  == 0 monochromatic pics
                     black++;
                 else
@@ -205,8 +197,6 @@ embryo::distanceStructure(const Picture& inA, const Picture& inB) {
         ++aciBegin;
     }
 
-    double lNormalize = lSum;
-
     lSum += lPenalty * (double) inB.height();
     lSum /= (double) (inB.height() + (total_black > total_white) ? total_white : total_black);
     return lSum;
@@ -215,7 +205,6 @@ embryo::distanceStructure(const Picture& inA, const Picture& inB) {
 double
 embryo::distance(const Picture& inA, const Picture& inB) { //inA = mCandidate; inB = mTargetPic
     //first is mCandidatePic; mCandidatePic_#cells <= mTargetPic_#cells
-    int lSize = inA.getAspectCellsSize();
 
     AspectCellConstIterator aciBegin;
     AspectCellConstIterator aciEnd;
@@ -225,7 +214,6 @@ embryo::distance(const Picture& inA, const Picture& inB) { //inA = mCandidate; i
 
     const double* lPixels = inB.pixels();
 
-    int lMaxCellSize = 1;
     Randomizer ran;
     ran.init(1985);
 
@@ -262,7 +250,6 @@ embryo::distance(const Picture& inA, const Picture& inB) { //inA = mCandidate; i
 double
 embryo::distance2(const Picture& inA, const Picture& inB) { //inA = mCandidate; inB = mTargetPic
     //first is mCandidatePic; mCandidatePic_#cells <= mTargetPic_#cells
-    int lSize = inA.getAspectCellsSize();
 
     AspectCellConstIterator aciBegin;
     AspectCellConstIterator aciEnd;
@@ -277,7 +264,6 @@ embryo::distance2(const Picture& inA, const Picture& inB) { //inA = mCandidate; 
     ran.init(1985);
 
     int x = 0;
-    int xOld = 0;
     int y = 0;
     while (aciBegin != aciEnd) {
         double lAspectCandidate = (*aciBegin)->getAspect();
@@ -329,14 +315,14 @@ embryo::maxDistance(const Picture& inPic) {
 }
 
 void Picture::init() {
-    for (int i = 0; i < mHeight; i++)
-        for (int j = 0; j < mWidth; j++)
+    for (size_t i = 0; i < mHeight; i++)
+        for (size_t j = 0; j < mWidth; j++)
             mAspectCells.push_back(new AspectCell(i, j, 1, 0.0));
 }
 
-void Picture::init(int iSize, double iAspect) {
-    for (int i = 0; i < mHeight; i++)
-        for (int j = 0; j < mWidth; j++)
+void Picture::init(size_t iSize, double iAspect) {
+    for (size_t i = 0; i < mHeight; i++)
+        for (size_t j = 0; j < mWidth; j++)
             mAspectCells.push_back(new AspectCell(i * iSize, j * iSize, iSize, iAspect));
 }
 
@@ -351,16 +337,16 @@ void Picture::eraseAspectCells() {
     mAspectCells.clear();
 }
 
-void Picture::setNextAspectCell(int iPositionX, int iPositionY, int iSize, double iAspect) {
+void Picture::setNextAspectCell(size_t iPositionX, size_t iPositionY, size_t iSize, double iAspect) {
     mAspectCells.push_back(new AspectCell(iPositionX, iPositionY, iSize, iAspect));
 }
 
 void Picture::print() {
     AspectCellIterator it = mAspectCells.begin();
     AspectCellIterator ite = mAspectCells.end();
-    int c = 0;
+    size_t c = 0;
     while (it != ite) {
-        printf("%d> x: %d, y: %d, s: %d, a: %e \n", ++c, (*it)->getPositionX(), (*it)->getPositionY(), (*it)->getSize(), (*it)->getAspect());
+        printf("%lu> x: %lu, y: %lu, s: %lu, a: %e \n", ++c, (*it)->getPositionX(), (*it)->getPositionY(), (*it)->getSize(), (*it)->getAspect());
         ++it;
     }
 }

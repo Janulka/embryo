@@ -10,7 +10,7 @@ export VERSION = 3.0
 
 #export CXX = gcc -fno-stack-protector -U_FORTIFY_SOURCE
 export CXX = g++
-export CXXFLAGS = -g -Wall -ansi -fopenmp
+export CXXFLAGS = -g -Wall -ansi -fopenmp -Wno-unused-function -Wno-reorder -Wno-write-strings
 #export OPTIM_FLAGS = -O2 -march=pentium4
 #export OPTIM_FLAGS = -O2 -march=i686 -mtune=pentium4
 #export CHOST="i686-pc-linux-gnu"
@@ -49,8 +49,8 @@ $(shell sdl-config --libs)
 export DIST_FILES_LIST = $(TOP_DIRECTORY)/.dist
 export LIB_EMBRYO_PATH = $(TOP_DIRECTORY)/libembryo
 
-#export INSTALL_DIRECTORY = /usr/local
-export INSTALL_DIRECTORY = $(TOP_DIRECTORY)/libembryo
+export INSTALL_DIRECTORY = /usr
+#export INSTALL_DIRECTORY = $(TOP_DIRECTORY)/libembryo
 
 ARCHIVE_FILE = $(shell basename `pwd`).tar.gz
 

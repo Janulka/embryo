@@ -81,10 +81,9 @@ public:
 ; // struct CmdLineConf
 
 
-
 const char* argp_program_version = "embryo-optim";
 
-const char *argp_program_bug_address = "<jana@lri.fr>";
+const char *argp_program_bug_address = "<baran.jana@gmail.com>";
 
 static char doc[] = "embryo-optim -- CMAES optimizer for cellular embryogenetic flags";
 
@@ -96,7 +95,7 @@ static struct argp_option options[]
     },
     {
         "path", 'p', "PATH", 0,
-        "test content path with embryo configuration file and pictures files"
+        "test folder path with embryo configuration file and pictures files"
     },
     {
         "config", 'c', "CONFIG", 0,
@@ -122,6 +121,8 @@ parseCmdLineOptions(int key, char* arg, struct argp_state* state) {
 
         case 'p':
             lCmdLineConf->testContentPath() = arg;
+            if (lCmdLineConf->testContentPath()[lCmdLineConf->testContentPath().size() - 1] != '/')
+                lCmdLineConf->testContentPath() += '/';
             break;
 
 	case 'g':
@@ -217,11 +218,11 @@ double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbStep
         Uint8 *keystate = SDL_GetKeyState(NULL);
         if (keystate[SDLK_g]) {
             bIsGui = !bIsGui;
-            keystate[SDLK_g] = NULL;
+            keystate[SDLK_g] = '\0';
         } else if (keystate[SDLK_p]) {
             int input;
             cin >> input;
-            keystate[SDLK_p] = NULL;
+            keystate[SDLK_p] = '\0';
             cout << "___" << iEmbryo.getSimilarity(i, ibColor) << endl;
         } else if (keystate[SDLK_ESCAPE])
             exit(1);
@@ -356,11 +357,11 @@ main(int argc, char* argv[]) {
         lEmbryo = Embryo::load(lFile, lCmdLineConf.seed(), (lCmdLineConf.testContentPath()).c_str(), bIsGuiOutputWindow);
     } catch (embryo::Exception& inException) {
         cerr
-                << "Error while loading embryo configuration file '"
-                << (lCmdLineConf.testContentPath() + "embryo.conf").c_str()
-                << "' :\n  "
-                << inException.getMessage()
-                << endl;
+            << "Error while loading embryo configuration file '"
+            << (lCmdLineConf.testContentPath() + "embryo.conf").c_str()
+            << "' :\n  "
+            << inException.getMessage()
+            << endl;
         return EXIT_FAILURE;
     }
 
@@ -371,10 +372,10 @@ main(int argc, char* argv[]) {
         lOutFile.close(); //close the output file
     } catch (embryo::Exception& inException) {
         cerr
-                << "Error while saving process pid value to external file'"
-                << "' :\n  "
-                << inException.getMessage()
-                << endl;
+            << "Error while saving process pid value to external file'"
+            << "' :\n  "
+            << inException.getMessage()
+            << endl;
         return EXIT_FAILURE;
     }
 
@@ -382,7 +383,7 @@ main(int argc, char* argv[]) {
     // GUI output
     Picture * lPicColorP;
     WidgetContainer lWidgetContainer;
-    SDL_Surface* lScreen;
+    SDL_Surface* lScreen = NULL;
     if (bIsGuiOutputWindow) {
         lWidgetContainer.push();
 
@@ -413,9 +414,9 @@ main(int argc, char* argv[]) {
 
         if (!lScreen) {
             cerr
-                    << "Unable to set " << gWidth << 'x' << gHeight
-                    << " video : " << SDL_GetError()
-                    << endl;
+                << "Unable to set " << gWidth << 'x' << gHeight
+                << " video : " << SDL_GetError()
+                << endl;
             return EXIT_FAILURE;
         }
 
@@ -439,19 +440,19 @@ main(int argc, char* argv[]) {
     double* lFitnessValues;
     try {
         lFitnessValues =
-                cmaes_init(&lCmaesState,
-                lEmbryo->controller().nbParameters(),
-                NULL,
-                NULL,
-                lCmdLineConf.seed(),
-                0,
-                lCmdLineConf.configFileName().c_str());
+            cmaes_init(&lCmaesState,
+                    lEmbryo->controller().nbParameters(),
+                    NULL,
+                    NULL,
+                    lCmdLineConf.seed(),
+                    0,
+                    lCmdLineConf.configFileName().c_str());
     } catch (embryo::Exception& inException) {
         cerr
-                << "Error while cmaes init fitness value '"
-                << "' :\n  "
-                << inException.getMessage()
-                << endl;
+            << "Error while cmaes init fitness value '"
+            << "' :\n  "
+            << inException.getMessage()
+            << endl;
         return EXIT_FAILURE;
     }
 
@@ -469,198 +470,194 @@ main(int argc, char* argv[]) {
 
 
     cout
-            << "# generation\t"
-            << "best fitness "
-            << endl;
-    
+        << "# generation\t"
+        << "best fitness "
+        << endl;
+
     int lGen = 0;
-        while ((lGen < 5) || (!(lStop = cmaes_TestForTermination(&lCmaesState)))) {
-            // Generate a new point cloud
-            double* const* lPop = cmaes_SamplePopulation(&lCmaesState);
-    
-            // Evaluate the points
-            for (size_t i = 0; i < lPopSize; i++) {
-                size_t lNbSteps;
-                double lSimilarity;
-    
-                Randomizer ran;
-                size_t size = 1;
-                ran.init(size);
-    
-                uint32_t ranInt = ran.uint32();
-                size_t pic;
-                pic = (size_t) (ranInt % 2);
-    
-                if (bIsGuiOutputWindow) {
-                    if (bIsGui)
-                        SDL_WM_SetCaption(buildWindowTitle(i, lFitnessValues[i]).c_str(), "ICON");
-                    lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, lPicColorP, lScreen, lWidgetContainer, false); 
-                } else
-                    lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, false);
-    
-                lSimilarities[i] = lFitnessValues[i]; // == lSimilarity;
-                lStructureSteps[i] = lNbSteps;
-                //                    cout << "_pop: " << i << " | fit: " << lFitnessValues[i] << endl;
-            }
-    
-            // Save the best genotype if it's the best ever
-            size_t lBestIndex = 0;
-            for (size_t i = 1; i < lPopSize; i++)
-                if (lSimilarities[lBestIndex] >= lSimilarities[i])
-                    lBestIndex = i;
-    
-            if (lFirstGeneration || (lBestEverSimilarity >= lSimilarities[lBestIndex])) {
-                lBestEverSimilarity = lSimilarities[lBestIndex];
-    
-                cout << " best gen: " << lGen << " | best fit: " << lBestEverSimilarity << " | best index: " << lBestIndex << endl;
-                ofstream lFile("best.cells.params");
-                if (!lFile)
-                    cerr << "Unable to save the best genotype";
-    
-                lFile << lStructureSteps[lBestIndex];
-                lFile << ' ';
-                arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
-    
-                //save x,y,size of cells also
-                ofstream lFile2("cells.params");
-                if (!lFile2)
-                    cerr << "Unable to save the cells properties";
-                lEmbryo->saveCells(lFile2);
-    
-                lFile.close();
-                lFile2.close();
-            }
-    
-	    lGen = cmaes_Get(&lCmaesState, "generation");
-	    //save best NN weights for current generation
-	    if (bSaveParamsEachGeneration) {
-	      //        if ((lGen % 20) == 0) {
-	      std::string lString;
-	      std::stringstream lStringStream;
-	      lStringStream << lGen;
-	      lString = lStringStream.str();
-	      lString = "best.cells.params." + lString;
-	      const char* lConstString = lString.c_str();
-	      ofstream lFile(lConstString);
-	      if (!lFile)
-		  cerr << "Unable to save the best genotype";
-	      lFile << lStructureSteps[lBestIndex];
-	      lFile << ' ';
-	      arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
-      
-	      lString = lStringStream.str();
-	      lString = "cells.params." + lString;
-	      lConstString = lString.c_str();
-	      ofstream lFile2(lConstString);
-	      if (!lFile2)
-		  cerr << "Unable to save the cells properties";
-	      lEmbryo->saveCells(lFile2);
-      
-	      lFile.close();
-	      lFile2.close();
-            }
-    
-            lFirstGeneration = false;
-    
-            // Update the CMAES state
-            cmaes_UpdateDistribution(&lCmaesState, lFitnessValues);
-    
-            // Print stuffs
-            //        cout
-            //                << "#eval: "
-            //                << cmaes_Get(&lCmaesState, "eval") << " | #gen: " // nb evals
-            //                << lGen << " | best fit: " // nb generation
-            //                << arrayd::minValue(lFitnessValues, lPopSize) // best generation fitness
-            //                << endl << endl;
-            cout
-                    << lGen << "\t" // nb generation
-                    << arrayd::minValue(lFitnessValues, lPopSize) // best generation fitness
-                    << endl;
-    
-    
-            bool bStop = true;
-            int inN = 1;
-            if (bIsGui) {
-                SDL_PumpEvents();
-                Uint8 *keystate = SDL_GetKeyState(NULL);
-                while (bStop) {
-                    lEmbryo->getColours(*lPicColorP);
-                    lWidgetContainer.paint(lScreen, false);
-    
-                    //  SDL_UpdateRect(lScreen, 0, 0, 0, 0);
-    
-                    int update = SDL_Flip(lScreen);
-                    if (update == -1) {
-                        cerr << "error by painting " << SDL_GetError() << std::endl;
-                        return EXIT_FAILURE;
-                    }
-                    double lF = lEmbryo->getSimilarity(0, false);
-                    SDL_WM_SetCaption(buildWindowTitle(0, lF).c_str(), "ICON");
-                    //                cout << "====" << lEmbryo->getSimilarity(0, false) << endl;
-    
-                    cin >> inN;
-                    if (inN == 0) {
-                        inN = 1;
-                        bStop = false;
-                    }
+    while ((lGen < 5) || (!(lStop = cmaes_TestForTermination(&lCmaesState)))) {
+        // Generate a new point cloud
+        double* const* lPop = cmaes_SamplePopulation(&lCmaesState);
+
+        // Evaluate the points
+        for (size_t i = 0; i < lPopSize; i++) {
+            size_t lNbSteps;
+            double lSimilarity;
+
+            //Randomizer ran;
+            //size_t size = 1;
+            //ran.init(size);
+
+            //uint32_t ranInt = ran.uint32();
+            //size_t pic;
+            //pic = (size_t) (ranInt % 2);
+
+            if (bIsGuiOutputWindow && lScreen != NULL) {
+                if (bIsGui)
+                    SDL_WM_SetCaption(buildWindowTitle(i, lFitnessValues[i]).c_str(), "ICON");
+                lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, lPicColorP, lScreen, lWidgetContainer, false); 
+            } else
+                lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, false);
+
+            lSimilarities[i] = lFitnessValues[i]; // == lSimilarity;
+            lStructureSteps[i] = lNbSteps;
+            //                    cout << "_pop: " << i << " | fit: " << lFitnessValues[i] << endl;
+        }
+
+        // Save the best genotype if it's the best ever
+        size_t lBestIndex = 0;
+        for (size_t i = 1; i < lPopSize; i++)
+            if (lSimilarities[lBestIndex] >= lSimilarities[i])
+                lBestIndex = i;
+
+        if (lFirstGeneration || (lBestEverSimilarity >= lSimilarities[lBestIndex])) {
+            lBestEverSimilarity = lSimilarities[lBestIndex];
+
+            cout << " best gen: " << lGen << " | best fit: " << lBestEverSimilarity << " | best index: " << lBestIndex << endl;
+            ofstream lFile((lCmdLineConf.testContentPath() + "best.cells.params").c_str());
+            if (!lFile)
+                cerr << "Unable to save the best genotype";
+
+            lFile << lStructureSteps[lBestIndex];
+            lFile << ' ';
+            arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
+
+            //save x,y,size of cells also
+            ofstream lFile2((lCmdLineConf.testContentPath() + "cells.params").c_str());
+            if (!lFile2)
+                cerr << "Unable to save the cells properties";
+            lEmbryo->saveCells(lFile2);
+
+            lFile.close();
+            lFile2.close();
+        }
+
+        lGen = cmaes_Get(&lCmaesState, "generation");
+        //save best NN weights for current generation
+        if (bSaveParamsEachGeneration) {
+            std::stringstream lStringStream;
+            lStringStream << lGen;
+            std::string lString = lCmdLineConf.testContentPath() + "best.cells.params." + lStringStream.str();
+            const char* lConstString = lString.c_str();
+            ofstream lFile(lConstString);
+            if (!lFile)
+                cerr << "Unable to save the best genotype";
+            lFile << lStructureSteps[lBestIndex];
+            lFile << ' ';
+            arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
+
+            lString = lCmdLineConf.testContentPath() + "cells.params." + lStringStream.str();
+            lConstString = lString.c_str();
+            ofstream lFile2(lConstString);
+            if (!lFile2)
+                cerr << "Unable to save the cells properties";
+            lEmbryo->saveCells(lFile2);
+
+            lFile.close();
+            lFile2.close();
+        }
+
+        lFirstGeneration = false;
+
+        // Update the CMAES state
+        cmaes_UpdateDistribution(&lCmaesState, lFitnessValues);
+
+        // Print stuffs
+        //        cout
+        //                << "#eval: "
+        //                << cmaes_Get(&lCmaesState, "eval") << " | #gen: " // nb evals
+        //                << lGen << " | best fit: " // nb generation
+        //                << arrayd::minValue(lFitnessValues, lPopSize) // best generation fitness
+        //                << endl << endl;
+        cout
+            << lGen << "\t" // nb generation
+            << arrayd::minValue(lFitnessValues, lPopSize) // best generation fitness
+            << endl;
+
+
+        bool bStop = true;
+        int inN = 1;
+        if (bIsGui) {
+            SDL_PumpEvents();
+            while (bStop) {
+                lEmbryo->getColours(*lPicColorP);
+                lWidgetContainer.paint(lScreen, false);
+
+                //  SDL_UpdateRect(lScreen, 0, 0, 0, 0);
+
+                int update = SDL_Flip(lScreen);
+                if (update == -1) {
+                    cerr << "error by painting " << SDL_GetError() << std::endl;
+                    return EXIT_FAILURE;
+                }
+                double lF = lEmbryo->getSimilarity(0, false);
+                SDL_WM_SetCaption(buildWindowTitle(0, lF).c_str(), "ICON");
+                //                cout << "====" << lEmbryo->getSimilarity(0, false) << endl;
+
+                cin >> inN;
+                if (inN == 0) {
+                    inN = 1;
+                    bStop = false;
                 }
             }
         }
-    
-        // CMAES log
-        cmaes_WriteToFile(&lCmaesState, "all", "allcmaes.dat");
-        cmaes_exit(&lCmaesState);
-    
-        ifstream lFile;
-        safeOpen(lFile, (lCmdLineConf.testContentPath() + "best.cells.params").c_str());
+    }
+
+    // CMAES log
+    cmaes_WriteToFile(&lCmaesState, "all", "allcmaes.dat");
+    cmaes_exit(&lCmaesState);
+
+    ifstream lFile;
+    if (safeOpen(lFile, (lCmdLineConf.testContentPath() + "best.cells.params").c_str()) == EXIT_SUCCESS) {
         lFile >> lEmbryo->structureSteps();
         arrayd::load(lFile, lEmbryo->controller().parameters(), lEmbryo->controller().nbParameters());
         lFile.close();
-    
-        //TODO: color for more cells
-        lEmbryo->initCells(0);
-        int lIterCounter = 0;
-        size_t lNbStructureSteps = lEmbryo->structureSteps() + 10;
-        while (lIterCounter < lNbStructureSteps) {
-            lEmbryo->update(false);
-            ++lIterCounter;
-        }
-        cout << "====" << lEmbryo->getSimilarity(0, false) << endl;
+    }
+
+    //TODO: color for more cells
+    lEmbryo->initCells(0);
+    size_t lIterCounter = 0;
+    size_t lNbStructureSteps = lEmbryo->structureSteps() + 10;
+    while (lIterCounter < lNbStructureSteps) {
+        lEmbryo->update(false);
+        ++lIterCounter;
+    }
+    cout << "====" << lEmbryo->getSimilarity(0, false) << endl;
 
     ///////////////////////
 
 
-//    lEmbryo->initCells(0);
-//
-//        int lIterCounter = 0;
-//    bool bColor = false;
-//    size_t lStructureStepss = lEmbryo->structureSteps() + 10;
-//    while (lIterCounter < lStructureStepss) {
-//        lEmbryo->update(bColor);
-//        lIterCounter++;
-//    }
+    //    lEmbryo->initCells(0);
+    //
+    //    int lIterCounter = 0;
+    //    bool bColor = false;
+    //    size_t lStructureStepss = lEmbryo->structureSteps() + 10;
+    //    while (lIterCounter < lStructureStepss) {
+    //        lEmbryo->update(bColor);
+    //        lIterCounter++;
+    //    }
 
     cout
-            << "%% color optimization "
-            << endl;
+        << "%% color optimization "
+        << endl;
 
     cmaes_t lCmaesState2;
     double* lFitnessValues2;
     try {
         lFitnessValues2 =
-                cmaes_init(&lCmaesState2,
-                lEmbryo->controller().nbParameters(),
-                NULL,
-                NULL,
-                lCmdLineConf.seed(),
-                0,
-                lCmdLineConf.configFileName().c_str());
+            cmaes_init(&lCmaesState2,
+                    lEmbryo->controller().nbParameters(),
+                    NULL,
+                    NULL,
+                    lCmdLineConf.seed(),
+                    0,
+                    lCmdLineConf.configFileName().c_str());
     } catch (embryo::Exception& inException) {
         cerr
-                << "Error while cmaes init fitness value '"
-                << "' :\n  "
-                << inException.getMessage()
-                << endl;
+            << "Error while cmaes init fitness value '"
+            << "' :\n  "
+            << inException.getMessage()
+            << endl;
         return EXIT_FAILURE;
     }
 
@@ -680,13 +677,13 @@ main(int argc, char* argv[]) {
             size_t lNbSteps;
             double lSimilarity;
 
-            Randomizer ran;
-            size_t size = 1;
-            ran.init(size);
+            //Randomizer ran;
+            //size_t size = 1;
+            //ran.init(size);
 
-            uint32_t ranInt = ran.uint32();
-            size_t pic;
-            pic = (size_t) (ranInt % 2);
+            //uint32_t ranInt = ran.uint32();
+            //size_t pic;
+            //pic = (size_t) (ranInt % 2);
 
             if (bIsGuiOutputWindow) {
                 if (bIsGui)
@@ -707,7 +704,7 @@ main(int argc, char* argv[]) {
         if (lFirstGeneration || (lBestEverSimilarity >= lSimilarities2[lBestIndex])) {
             lBestEverSimilarity = lSimilarities2[lBestIndex];
 
-            ofstream lFile("best.params");
+            ofstream lFile((lCmdLineConf.testContentPath() + "best.params").c_str());
             if (!lFile)
                 cerr << "Unable to save the best genotype";
 
@@ -717,25 +714,20 @@ main(int argc, char* argv[]) {
         }
 
         int lGen = cmaes_Get(&lCmaesState2, "generation");
-	//save best NN weights for current generation
-	if (bSaveParamsEachGeneration) {
-	  //        if (((int) lPopSize % 20) == 0) {
-	  //        if ((lGen % 20) == 0) {
-	  std::string lString;
-	  std::stringstream lStringStream;
-	  lStringStream << lGen;
-	  lString = lStringStream.str();
-	  lString = "best.params." + lString;
-	  const char* lConstString = lString.c_str();
-	  ofstream lFile(lConstString);
-	  if (!lFile)
-	      cerr << "Unable to save the best genotype";
-	  arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
+        //save best NN weights for current generation
+        if (bSaveParamsEachGeneration) {
+            std::stringstream lStringStream;
+            lStringStream << lGen;
+            std::string lString = lCmdLineConf.testContentPath() + "best.params." + lStringStream.str();
+            const char* lConstString = lString.c_str();
+            ofstream lFile(lConstString);
+            if (!lFile)
+                cerr << "Unable to save the best genotype";
+            arrayd::save(lFile, lPop[lBestIndex], lEmbryo->controller().nbParameters());
 
 
-	  lFile.close();
-	}
-        //        }
+            lFile.close();
+        }
 
         lFirstGeneration = false;
 
@@ -750,9 +742,9 @@ main(int argc, char* argv[]) {
         //                << arrayd::minValue(lFitnessValues, lPopSize) // best generation fitness
         //                << endl << endl;
         cout
-                << lGen << "\t" // nb generation
-                << arrayd::minValue(lFitnessValues2, lPopSize) // best generation fitness
-                << endl;
+            << lGen << "\t" // nb generation
+            << arrayd::minValue(lFitnessValues2, lPopSize) // best generation fitness
+            << endl;
     }
 
     // CMAES log

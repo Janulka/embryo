@@ -131,7 +131,7 @@ static struct argp_option options[]
     },
     {
         "path", 'c', "PATH", 0,
-        "test content full path"
+        "test folder path"
     },
     {
         0
@@ -178,6 +178,8 @@ parseCmdLineOptions(int key, char* arg, struct argp_state* state) {
 
         case 'c':
             lCmdLineConf->testContentPath() = arg;
+            if (lCmdLineConf->testContentPath()[lCmdLineConf->testContentPath().size() - 1] != '/')
+                lCmdLineConf->testContentPath() += '/';
             break;
 
         case ARGP_KEY_ARG:
@@ -255,8 +257,8 @@ int main(int argc, char* argv[]) {
     Picture lTargetPic;
     double lMaxDist = -1.0;
 
-    std::string lTargetFileName = (lCmdLineConf.testContentPath() + lCmdLineConf.targetFileName()).c_str(); //lCmdLineConf.targetFileName();
-    if (!(lTargetFileName.empty())) {
+    std::string lTargetFileName = (lCmdLineConf.testContentPath() + lCmdLineConf.targetFileName()).c_str();
+    if (!(lCmdLineConf.targetFileName().empty())) {
         // Load the target picture
         try {
             ifstream lFile;
@@ -414,7 +416,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < lHistorySize; i++)
         lSimilarities[i] = 4;
 
-    int lIterCounter = 0;
+    size_t lIterCounter = 0;
     bool bColor = false;
     size_t lStructureSteps = lEmbryo->structureSteps() + 10;
 
