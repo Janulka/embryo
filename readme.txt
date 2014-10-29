@@ -1,23 +1,40 @@
-Embryo 3 version optimizing structure and color pattern.
+EMBRYO - cellular automaton adapting for structure and color pattern. The pattern is learnt via neural network which is optimized by an evolutionary algorithm CMA-ES (Covariance Matrix Adaptation Evolution Strategy http://en.wikipedia.org/wiki/CMA-ES).
 
-CMA-ES (Covariance Matrix Adaptation Evolution Strategy) is used as the optimizer: http://en.wikipedia.org/wiki/CMA-ES
-
-see video of an (already optimized) embryo evolving into the learned pattern:
+See video of an (already optimized) embryo evolving into the learned pattern:
 https://www.youtube.com/watch?v=cB1l2mf_OwI
 
 fontconfig, cairo, SDL, gsl, openmp headers and libraries required
 
 in debian based distros:
 
-sudo aptitude install 'desired library'
-
-where the desired libraries are:
-libfontconfig-dev
-libcairo-dev
-libsdl-dev
-libgsl0-dev
-libopenmpi-dev
+sudo apt-get install libfontconfig-dev libcairo-dev libsdl-dev libgsl0-dev libopenmpi-dev
 
 set your LD_LIBRARY_PATH and PKG_CONFIG_PATH environment variables (in ~/.bashvrc)
 modify GENERAL_INSTALL_DIR in the Makefile 
+
+to build:
+
 make
+sudo make install
+
+example how to run:
+1) optimizer
+./tools/optim/embryo-optim -c cmaes.conf -p selectedExperiments/swissflag
+2)
+./tools/view/embryo-view -c selectedExperiments/swissflag -e embryo.conf -p best.params -s best.cells.params -t swissflagBW.pgm
+
+__________________________________________________________________________________________
+
+Toward Evolutionary Design Optimization by Cellular Representations with Implicit Ontogeny
+
+Abstract
+
+Nature provides numerous examples of evolutionary optimization of organisms to different habitats and lifestyles. Nature has therefore been an inspiration in many engineering areas, especially in Evolutionary Algorithms (EA) and consequently in the modern area of automated engineering based on EA - evolutionary design. EA are robust tools for the optimization of complex systems. Main advantage of EA based systems over humans in design is that EA are not weighted with a cognitive bias and EA work with a population of solutions rather than a single solution. It means that a bigger search space is explored and more promising areas can be exploited. Evolutionary design has been applied to many different optimization problems over the last 25 years [1], for instance in mechanical engineering to optimize shapes of turbines, propellers, or even supersonic airplanes. One of the challenges facing the implementation of an efficient software for evolutionary design is a choice of a suitable representation, its effective evaluation, and possibly its embryogeny (ontogeny). Direct and indirect representations are the main representation types. In direct representations (usually no embryogeny), the genotype directly encodes the phenotype. More complex and sophisticated representations are indirect representations (usually explicit embryogeny). Here, the phenotype is determined by the genotype, but the genotype does not encode the phenotype directly, but rather encodes instructions how to construct the phenotype result. A novel, less explored, but very promising representation type are cellular automata (CA). CA combine the properties of direct and indirect representations in the sense that the cellular topology maps to the phenotype topology directly, but the embryogeny of the genotype is implicit thus the state of a cell depends on states of the cell's neighbors. Nevertheless, the state can be guided by external rules but the dependency on neighborhood makes it implicit. We used CA as a representation for the evaluation of specific evolutionary design optimization problems. CA as well as indirect representations have several advantages over direct representations as a compressed length of the genotype, simple possibility of repeating and symmetry, focus on details, or aesthetic impression.
+We were inspired by a well known structured programming problem in computer science proposed by Edsger Dijkstra as the 'Dutch national flag problem'. The task can be viewed as rearranging elements of a given representation in order to construct the Dutch flag. The problem has a trivial solution useful in programming education. Over time, the flag problem has been solved by various methods, and nowadays it serves as a benchmark problem in multiple areas including evolutionary design. The flag problem is a fictive simple optimization task which tests a representation for its optimization capabilities. This is the first stage before using the system on the application level thus designing constraints and a cost function of a real problem for the system. In our work, the target flag is a two dimensional (2D) pattern which is expected to be an end result of an iterating 2D CA. We are looking for such transfer function for a cell that creates a robust stable target pattern from the initial zero configuration, and additionally, an attractor able to repair the target pattern after local perturbations (Gaussian noise). The amount of noise, with which the CA is able to deal and restore the flag, determines the quality of the solution. This work is based on [3], where the goal was to optimize one color pattern using a CA with static cells grid structure. In this work, the CA optimizes multiple color patterns simultaneously, or the CA optimizes at first the structure and then the color. The structure is optimized by a variable cells grid. In multiple color patterns optimization, the information specifying the target is encoded into border cells of the grid. Because of the different border, the CA is able to evolve into different attractors and thus reconstruct different patterns. It is worth noting that the border information is available only to neighboring cells. The neighboring cells transport the information to remaining cells during diffusion (Gaussian Blur). Each cell has state variables - internal states and external chemicals. During diffusion, cell's chemicals mix with neighbors' chemicals. The diffusion is followed by a reaction (CA transfer function) - a CA communication process (reaction-diffusion model proposed by Turing). Because of suitable adaptive properties, the CA reaction is controlled by a multi layer perceptron (MLP). For each cell, the MLP processes state variables of the cell and its neighbors and updates the cell's state variables. From the state variables of cells, the resulting phenotype (picture) of the CA is computed by the MLP. The CA update is performed in a cycle until the standard deviation of the ,,energies" (The 'energy' of a cell was a sum over squares of all state variables of the cell. The energy of the CA was the sum of the energy values of all its cells.) over a number (8) of consecutive steps falls below a threshold, or until a given number of maximum steps (1024) is passed. The functionality of CA depends on MLP weights that are subject of search and optimization. MLP weights create the genotype of the CA and form an individual within the EA. A population of individuals is maintained and evaluated by a Covariance Matrix Adaptation Evolution Strategy (CMAES). CMAES is based on a mathematical model of multivariate normal distribution probability given by a mean and a covariance matrix [2]. Thus the CMAES samples the MLP weights and optimizes them according to their fitness values. The fitness value of a CA is calculated by an objective function that minimizes the distance between CA phenotype and the target pattern. The number of states, chemicals, and hidden neurons in the MLP are the system's parameters and depend on the complexity of the evolved pattern(s). In our experiments, we used one state and two chemicals for each cell and eight hidden neurons in the MLP. The number of MLP weights was determined by these variables (114). We used 32x32 pixels monochromatic 2D flags [1]. The experiments optimizing one color pattern showed that some of targets were easier to learn than other. In experiments optimizing two color patterns, where the border cells' states were set to 0 (black) for the first flag and to 1 (white) for the second flag, the targets were optimized sequentially. Results showed that a half of evolved CA were able to restore either both flags or a single flag. Experiments with more than two flags were not successful. The structure-color experiments with variable grid optimized patterns sequentially, first the structure and then the color. These experiments validated a hypothesis that CA are capable of structure optimization, and the reduced genotype of a CA sped up the CA evaluation.
+To conclude, we tested the scalability of a developmental strategy by multi objective optimization (MOO) tasks under various initial conditions. The strategy combines cellular representation with artificial neural networks and evolution strategies. In the first part of the work, we replicated the experiments from [3] and verified the capability of the CA to adapt to various patterns. In the second part of the work, we examined and confirmed the possibilities of CA to converge into multiple specified attractors according to the border information and the ability of CMAES to optimize such automata. In the final part of the work, we created a new kind of CA with variable cells grid able to adapt to the structure pattern thus focus more on the pattern details, reduce the size of the CA genotype, and speed up the evaluation of the CA. Future work will be focused on simultaneous MOO, a variable grid of cells, three dimensional optimization, and additional applications of cellular representations in evolutionary design.
+_____________
+References:
+[1]Hlavacikova, J. (2010) Cellular Embryogenic Representations in Evolutionary Design, Comenius University in Bratislava, master thesis, available on-line at http://virtuallab.kar.elf.stuba.sk/~jana/
+[2]Hansen, N. (2010) The CMA Evolution Strategy: A Tutorial, version 7 March 2010 available on-line at http://www.lri.fr/~hansen/cmaesintro.html
+[3]Devert, A. (2009) Building processes optimization: Toward an artificial ontogeny based approach, Universite Paris-Sud, France, 2009, Ph. D. Dissertation
+
