@@ -4,14 +4,18 @@
 #include <fstream>
 #include <iostream>
 #include <embryo.h>
-#include <ArrayOps.h>
-#include "cmaes_interface.h"
 #include <sys/types.h>
 #include <unistd.h>
 #include <iomanip>
-#include "SDL/SDL.h"
-#include <omp.h>
 #include <set>
+#include <signal.h>
+
+#include "SDL/SDL.h"
+#include <ArrayOps.h>
+#include <omp.h>
+
+#include "cmaes/cmaes_interface.h"
+
 #include "Widget.h"
 #include "WidgetContainer.h"
 #include "EmbryoView.h"
@@ -21,7 +25,6 @@
 #include "Picture.h"
 
 using namespace std;
-using namespace cmaes;
 using namespace embryo;
 
 int gWidth = 512;
@@ -185,6 +188,18 @@ std::string buildWindowTitle(size_t inNbFitness, double inCurrentFitness) {
     return lBuffer.str();
 }
 
+static bool aborted = false;
+
+static void exit_sig_handler(int sig) {
+    if (aborted) {
+        std::cerr << "Forcing exit!!!" << std::endl;
+        std::exit(EXIT_FAILURE);
+    } else {
+        std::cerr << "Caught signal " << strsignal(sig) << "(" << sig << "), finishing... (Ctrl+C again to force exit)" << std::endl;
+        aborted = true;
+    }
+}
+
 double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbSteps, double& outSimilarity, Picture*& picColor, SDL_Surface* lScreen, WidgetContainer & iWidgetContainer, bool ibColor)
 {
     iEmbryo.setupController(inVector);
@@ -197,7 +212,7 @@ double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbStep
     size_t lPicsNo = iEmbryo.getPicsNumber();
     size_t lNbSteps = 0;
 
-    double lPenalty = double(outNbSteps) / (lPicsNo * lNbStepsMax);
+    //double lPenalty = double(outNbSteps) / (lPicsNo * lNbStepsMax);
 
     double bestFitness = 1.0;
     double worstFitness = 0.0;
@@ -234,17 +249,18 @@ double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbStep
             int update = SDL_Flip(lScreen);
             if (update == -1) {
                 cerr << "error by painting " << SDL_GetError() << std::endl;
-                return EXIT_FAILURE;
+                exit(0);
             }
 
         }
 
-        if (lNbSteps < lNbStepsMax) {
+        if (lNbSteps < lNbStepsMax && !aborted) {
             lSimilarity = iEmbryo.getSimilarity(i, ibColor);
             double lPenalty = (double) ((double) (lNbSteps) / (double) (lNbStepsMax));
             lSimilarity *= (lPenalty * lPenalty + 1.0);
-        } else
+        } else {
             lSimilarity = 1.0;
+        }
 
         if (lSimilarity < bestFitness)
             bestFitness = lSimilarity;
@@ -263,7 +279,6 @@ double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbStep
     if (outSimilarity > 1) {
         outSimilarity = 1.0;
     } else if (outSimilarity < 0) {
-
         outSimilarity = 0.0;
     }
 
@@ -283,7 +298,7 @@ double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbStep
     size_t lPicsNo = iEmbryo.getPicsNumber();
     size_t lNbSteps = 0;
 
-    double lPenalty;
+    //double lPenalty;
 
     double bestFitness = 1.0;
     double worstFitness = 0.0;
@@ -300,12 +315,13 @@ double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbStep
 
         for (iEmbryo.resetMonitor(i); iEmbryo.update(ibColor) && (lNbSteps < lNbStepsMax); lNbSteps += 1);
 
-        if (lNbSteps < lNbStepsMax) {
+        if (lNbSteps < lNbStepsMax && !aborted) {
             lSimilarity = iEmbryo.getSimilarity(i, ibColor);
             double lPenalty = (double) ((double) (lNbSteps) / (double) (lNbStepsMax));
             lSimilarity *= (lPenalty * lPenalty + 1.0);
-        } else
+        } else {
             lSimilarity = 1.0;
+        }
 
         if (lSimilarity < bestFitness)
             bestFitness = lSimilarity;
@@ -332,8 +348,23 @@ double embryoEvaluate(Embryo& iEmbryo, const double* inVector, size_t& outNbStep
 
 }
 
-int
-main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) {
+
+    // install signal handler
+    struct sigaction new_action, old_action;
+    new_action.sa_handler = exit_sig_handler;
+    sigemptyset(&new_action.sa_mask);
+    new_action.sa_flags = SA_RESTART;
+
+    sigaction(SIGINT, NULL, &old_action);// ctrl+c
+    if (old_action.sa_handler != SIG_IGN) {
+        sigaction(SIGINT, &new_action, NULL);
+    }
+    sigaction(SIGTERM, NULL, &old_action);// kill (non -9)
+    if (old_action.sa_handler != SIG_IGN) {
+        sigaction(SIGTERM, &new_action, NULL);
+    }
+
     bSaveParamsEachGeneration = false;
     bIsGui = false;
     CmdLineConf lCmdLineConf;
@@ -476,6 +507,10 @@ main(int argc, char* argv[]) {
 
     int lGen = 0;
     while ((lGen < 5) || (!(lStop = cmaes_TestForTermination(&lCmaesState)))) {
+        if (aborted) {
+            aborted = false;
+            break;
+        }
         // Generate a new point cloud
         double* const* lPop = cmaes_SamplePopulation(&lCmaesState);
 
@@ -496,8 +531,9 @@ main(int argc, char* argv[]) {
                 if (bIsGui)
                     SDL_WM_SetCaption(buildWindowTitle(i, lFitnessValues[i]).c_str(), "ICON");
                 lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, lPicColorP, lScreen, lWidgetContainer, false); 
-            } else
+            } else {
                 lFitnessValues[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, false);
+            }
 
             lSimilarities[i] = lFitnessValues[i]; // == lSimilarity;
             lStructureSteps[i] = lNbSteps;
@@ -670,6 +706,9 @@ main(int argc, char* argv[]) {
     lBestEverSimilarity = 1.0;
 
     while ((!(lStop = cmaes_TestForTermination(&lCmaesState2)))) {
+        if (aborted) {
+            break;
+        }
         // Generate a new point cloud
         double* const* lPop = cmaes_SamplePopulation(&lCmaesState2);
 
@@ -689,8 +728,9 @@ main(int argc, char* argv[]) {
                 if (bIsGui)
                     SDL_WM_SetCaption(buildWindowTitle(i, lFitnessValues2[i]).c_str(), "ICON");
                 lFitnessValues2[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, lPicColorP, lScreen, lWidgetContainer, true); //, lEmbryo->mTargetPic);
-            } else
+            } else {
                 lFitnessValues2[i] = embryoEvaluate(*lEmbryo, lPop[i], lNbSteps, lSimilarity, true);
+            }
 
             lSimilarities2[i] = lSimilarity;
         }

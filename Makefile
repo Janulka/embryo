@@ -1,4 +1,4 @@
-DIRS = libembryo tools/view tools/optim
+DIRS = libembryo tools/view tools/optim cmaes
 
 export PKG_CONFIG_PATH=$(shell pwd)/libembryo/lib/pkgconfig
 export LD_LIBRARY_PATH=$(shell pwd)/libembryo
@@ -48,6 +48,7 @@ $(shell sdl-config --libs)
 
 export DIST_FILES_LIST = $(TOP_DIRECTORY)/.dist
 export LIB_EMBRYO_PATH = $(TOP_DIRECTORY)/libembryo
+export LIB_CMAES_PATH = $(TOP_DIRECTORY)/cmaes
 
 export INSTALL_DIRECTORY = /usr
 #export INSTALL_DIRECTORY = $(TOP_DIRECTORY)/libembryo

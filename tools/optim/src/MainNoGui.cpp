@@ -4,7 +4,7 @@
 #include <iostream>
 #include <embryo.h>
 #include <ArrayOps.h>
-#include "cmaes_interface.h"
+#include "cmaes/cmaes_interface.h"
 #include <sys/types.h>
 #include <unistd.h>
 #include <iomanip>

@@ -1,0 +1,10 @@
+prefix=
+libdir=/lib
+includedir=/include
+plugindir=/lib/cmaes
+
+Name: cmaes
+Description: covariance matrix adaptation evolution strategy 
+Version: 
+Libs: -L${libdir} -lcmaes
+Cflags: -I${includedir}/cmaes

@@ -1111,7 +1111,7 @@ double Embryo::evaluate(const double* inVector, size_t& outNbSteps, double& outS
     double lSimilaritySum = 0;
     double lSimilarity;
 
-    double lPenalty = double(outNbSteps) / (mPicsNo * nbStepsMax());
+    //double lPenalty = double(outNbSteps) / (mPicsNo * nbStepsMax());
 
     double bestFitness = 1.0;
     double worstFitness = 0.0;
@@ -1143,7 +1143,6 @@ double Embryo::evaluate(const double* inVector, size_t& outNbSteps, double& outS
         lNbSteps = 0;
     }
 
-    lPenalty = double(outNbSteps) / (mPicsNo * nbStepsMax());
     //00
     outSimilarity = lSimilaritySum / mPicsNo;
 

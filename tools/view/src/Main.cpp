@@ -237,9 +237,7 @@ buildWindowTitle(size_t inNbEpochs, double inCurrentFitness, bool inRunMode) {
 
     lBuffer << argp_program_version << " | ";
 
-    lBuffer << inNbEpochs << " epochs";
-
-    lBuffer << argp_program_version << " | ";
+    lBuffer << inNbEpochs << " epochs " << " | ";
 
     lBuffer << inCurrentFitness << " fitness";
 

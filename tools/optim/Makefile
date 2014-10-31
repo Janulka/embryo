@@ -1,7 +1,6 @@
 TARGET = embryo-optim
 
 SRC_FILES = \
-./src/cmaes.cpp \
 ./src/exception.cpp \
 ./src/Main.cpp \
 ./src/random.cpp \
@@ -23,12 +22,12 @@ OBJECTS = $(patsubst %.cpp,%.o,$(SRC_FILES))
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
-	$(CXX) -o $@  $(OBJECTS) $(LDFLAGS) -L$(LIB_EMBRYO_PATH) -lembryo
+	$(CXX) -o $@  $(OBJECTS) $(LDFLAGS) -L$(LIB_EMBRYO_PATH) -lembryo -L$(LIB_CMAES_PATH) -lcmaes
 CAL_DIRECTORY = $(TOP_DIRECTORY)/tools/optim
 
 
 %.o:%.cpp
-	$(CXX) -c -fPIC $(INCLUDES) -I$(TOP_DIRECTORY)/libembryo/include -I$(TOP_DIRECTORY)/tools/view/include $(CXXFLAGS) $(OPTIM_FLAGS) -o $@ $<
+	$(CXX) -c -fPIC $(INCLUDES) -I$(TOP_DIRECTORY) -I$(LIB_CMAES_PATH) -I$(LIB_EMBRYO_PATH)/include -I$(TOP_DIRECTORY)/tools/view/include $(CXXFLAGS) $(OPTIM_FLAGS) -o $@ $<
 
 clean:
 	rm -f ./src/*.o
